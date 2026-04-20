@@ -278,13 +278,15 @@ async def handle_connect_command(
     await ack()
     
     # Parse command arguments
+    # Split only on first whitespace - password can contain spaces
     text = command.get("text", "").strip()
-    parts = text.split()
+    parts = text.split(None, 1)  # Split into max 2 parts: email and password
     
     if len(parts) != 2:
         await respond(
             ":warning: *Usage:* `/connect <intranet-email> <intranet-password>`\n"
-            "Example: `/connect john.doe@ggpsystems.co.uk mypassword`"
+            "Example: `/connect john.doe@ggpsystems.co.uk mypassword`\n"
+            "Note: Passwords with spaces are supported (e.g., `/connect email my password with spaces`)"
         )
         return
     
