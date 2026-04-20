@@ -294,14 +294,25 @@ async def handle_connect_command(
     slack_user_id = command.get("user_id")
     
     # Get Slack user info for the linking request
-    try:
-        slack_info = await client.users_info(user=slack_user_id)
-        slack_user = slack_info.get("user", {})
-        slack_email = slack_user.get("profile", {}).get("email", "")
-        slack_username = slack_user.get("name", "")
-    except Exception:
-        slack_email = ""
-        slack_username = ""
+    # First try to get email from command context
+    slack_email = command.get("user_email", "")
+    slack_username = ""
+    
+    # If not available, try to fetch from Slack API
+    if not slack_email:
+        try:
+            slack_info = await client.users_info(user=slack_user_id)
+            slack_user = slack_info.get("user", {})
+            slack_email = slack_user.get("profile", {}).get("email", "")
+            slack_username = slack_user.get("name", "")
+        except Exception:
+            slack_email = ""
+            slack_username = ""
+    
+    # If still no email, try to use intranet_email as fallback
+    # (they should match for the same person)
+    if not slack_email:
+        slack_email = intranet_email
     
     if not settings.intranet_api_token:
         await respond(":x: Bot is not configured for intranet authentication.")
