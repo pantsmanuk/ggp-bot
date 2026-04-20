@@ -5,6 +5,7 @@ from ggp_bot.slack.handlers.commands import (
     handle_intranet_status_command,
     handle_next_bank_holiday_command,
     handle_whoami_command,
+    handle_connect_command,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "handle_intranet_status_command",
     "handle_next_bank_holiday_command",
     "handle_whoami_command",
+    "handle_connect_command",
 ]

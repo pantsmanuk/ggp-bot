@@ -14,6 +14,64 @@ async def handle_ping_command(ack: AsyncAck, respond: AsyncRespond) -> None:
     await respond("Pong! :table_tennis_paddle_and_ball: Bot is alive and responding.")
 
 
+async def handle_connect_command(
+    ack: AsyncAck,
+    respond: AsyncRespond,
+    command: dict,
+    client: AsyncWebClient
+) -> None:
+    """Handle the /connect command.
+    
+    Links the user's Slack account to their intranet account.
+    Usage: /connect <intranet-email> <password>
+    """
+    await ack()
+    
+    # Parse command arguments
+    text = command.get("text", "").strip()
+    parts = text.split()
+    
+    if len(parts) != 2:
+        await respond(
+            ":warning: *Usage:* `/connect <intranet-email> <password>`\n"
+            "Example: `/connect john.doe@ggpsystems.co.uk mypassword`"
+        )
+        return
+    
+    email, password = parts[0], parts[1]
+    slack_user_id = command.get("user_id")
+    
+    if not settings.intranet_api_token:
+        await respond(":x: Bot is not configured for intranet authentication.")
+        return
+    
+    async with IntranetClient(
+        base_url=settings.intranet_base_url,
+        token=settings.intranet_api_token
+    ) as intranet:
+        try:
+            result = await intranet.link_slack_account(
+                email=email,
+                password=password,
+                slack_user_id=slack_user_id
+            )
+            
+            if result.get("success"):
+                await respond(
+                    f":white_check_mark: *Account linked successfully!*\n"
+                    f"Your Slack account is now connected to: {email}\n\n"
+                    f"You can now use commands like `/whoami` to see your profile."
+                )
+            else:
+                message = result.get("message", "Unknown error")
+                await respond(f":x: Linking failed: {message}")
+                
+        except IntranetError as e:
+            await respond(f":x: Failed to link account: {e}")
+        except Exception as e:
+            await respond(f":x: Unexpected error: {e}")
+
+
 async def handle_intranet_status_command(
     ack: AsyncAck, 
     respond: AsyncRespond,

@@ -202,6 +202,35 @@ class IntranetClient:
         data = await self._get("/api/holidays/next-public")
         return PublicHoliday(**data["data"])
     
+    async def link_slack_account(
+        self, 
+        email: str, 
+        password: str, 
+        slack_user_id: str
+    ) -> dict:
+        """Link a Slack account to an intranet user account.
+        
+        Args:
+            email: User's intranet email address
+            password: User's intranet password
+            slack_user_id: Slack user ID (from command context)
+            
+        Returns:
+            API response dict with success status and message
+        """
+        payload = {
+            "email": email,
+            "password": password,
+            "slack_user_id": slack_user_id,
+        }
+        
+        data = await self._post("/api/auth/slack-link", payload)
+        return {
+            "success": data.get("success", False),
+            "message": data.get("message", ""),
+            "data": data.get("data"),
+        }
+    
     async def close(self) -> None:
         """Close the HTTP client connection."""
         await self.client.aclose()
