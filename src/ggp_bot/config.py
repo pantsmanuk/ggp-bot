@@ -7,6 +7,17 @@ from pydantic import Field
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
+    # Slack - required for bot operation
+    slack_bot_token: str = Field(
+        description="Bot User OAuth Token (starts with xoxb-)"
+    )
+    slack_signing_secret: str = Field(
+        description="Signing secret for request verification"
+    )
+    slack_app_token: str = Field(
+        description="App-Level Token for Socket Mode (starts with xapp-)"
+    )
+    
     # Intranet (Laravel 13) - required for basic health check
     intranet_base_url: str = Field(
         default="https://intranet.ggpsystems.co.uk",
