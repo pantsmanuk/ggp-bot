@@ -1,36 +1,36 @@
-"""Intranet API client for GGP Laravel backend."""
+"""Intranet API client for GGP Laravel backend - aligned with API v0.99.5."""
 
 import httpx
 from typing import Any
 
 from ggp_bot.intranet.errors import raise_for_api_error
 from ggp_bot.intranet.models import (
-    ApiResponse,
     HealthStatus,
-    Holiday,
-    HolidayBalance,
     PublicHoliday,
+    HolidayEntitlement,
+    HolidayRequest,
     UserProfile,
+    UserSearchResult,
 )
 
 
 class IntranetClient:
-    """HTTP client for GGP intranet API."""
+    """HTTP client for GGP intranet API v0.99.5+."""
     
     def __init__(self, base_url: str, token: str | None = None):
         """Initialize the intranet client.
         
         Args:
-            base_url: The base URL for the intranet API (e.g., https://intranet.ggpsystems.co.uk)
+            base_url: The base URL for the intranet API
             token: Optional Bearer token for authenticated requests
         """
         self.base_url = base_url.rstrip("/")
         self.token = token
         
-        # Build headers - auth is optional for some endpoints like /health
         headers = {
             "Accept": "application/json",
-            "User-Agent": "ggp-bot/0.1.0",
+            "Content-Type": "application/json",
+            "User-Agent": "ggp-bot/0.3.1",
         }
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -42,31 +42,17 @@ class IntranetClient:
         )
     
     async def _get(self, path: str, authenticated: bool = True) -> dict[str, Any]:
-        """Make a GET request to the API.
-        
-        Args:
-            path: API endpoint path (e.g., "/api/health")
-            authenticated: Whether this endpoint requires authentication
-            
-        Returns:
-            Parsed JSON response
-            
-        Raises:
-            IntranetError: If the API returns an error
-            httpx.HTTPError: If the HTTP request fails
-        """
+        """Make a GET request to the API."""
         if authenticated and not self.token:
             raise ValueError("Authentication required but no token provided")
         
         response = await self.client.get(path)
         
-        # Handle HTTP errors
         if response.status_code >= 400:
             try:
                 data = response.json()
                 raise_for_api_error(data, response.status_code)
             except ValueError:
-                # Not valid JSON
                 response.raise_for_status()
         
         response.raise_for_status()
@@ -75,16 +61,7 @@ class IntranetClient:
         return data
     
     async def _post(self, path: str, json_data: dict[str, Any], authenticated: bool = True) -> dict[str, Any]:
-        """Make a POST request to the API.
-        
-        Args:
-            path: API endpoint path
-            json_data: JSON payload
-            authenticated: Whether this endpoint requires authentication
-            
-        Returns:
-            Parsed JSON response
-        """
+        """Make a POST request to the API."""
         if authenticated and not self.token:
             raise ValueError("Authentication required but no token provided")
         
@@ -102,126 +79,171 @@ class IntranetClient:
         raise_for_api_error(data, response.status_code)
         return data
     
+    async def _delete(self, path: str, authenticated: bool = True) -> dict[str, Any]:
+        """Make a DELETE request to the API."""
+        if authenticated and not self.token:
+            raise ValueError("Authentication required but no token provided")
+        
+        response = await self.client.delete(path)
+        
+        if response.status_code >= 400:
+            try:
+                data = response.json()
+                raise_for_api_error(data, response.status_code)
+            except ValueError:
+                response.raise_for_status()
+        
+        response.raise_for_status()
+        data = response.json()
+        raise_for_api_error(data, response.status_code)
+        return data
+    
+    # ==================== Health & Public Info ====================
+    
     async def health_check(self) -> HealthStatus:
-        """Check intranet API health status.
-        
-        Hits the /api/health endpoint which requires no authentication.
-        
-        Returns:
-            HealthStatus model with API version and status
-        """
+        """Check intranet API health status."""
         data = await self._get("/api/health", authenticated=False)
         return HealthStatus(**data["data"])
     
-    async def get_current_user(self) -> UserProfile:
-        """Get current authenticated user's profile.
-        
-        Returns:
-            UserProfile with user details
-        """
-        data = await self._get("/api/users/me")
-        return UserProfile(**data["data"])
+    async def get_rate_limits(self) -> dict[str, Any]:
+        """Get rate limiting information."""
+        data = await self._get("/api/rate-limits", authenticated=False)
+        return data["data"]
     
-    # ==================== Holidays API ====================
+    # ==================== Public Holidays ====================
     
-    async def get_holiday_balance(self) -> HolidayBalance:
-        """Get current user's holiday balance.
-        
-        Returns:
-            HolidayBalance with entitlement, used, remaining days
-        """
-        data = await self._get("/api/holidays/balance")
-        return HolidayBalance(**data["data"])
+    async def get_next_public_holiday(self) -> PublicHoliday:
+        """Get the next upcoming UK public holiday."""
+        data = await self._get("/api/holidays/next-public", authenticated=False)
+        return PublicHoliday(**data["data"])
     
-    async def list_holidays(self, status: str | None = None, year: int | None = None) -> list[Holiday]:
-        """List current user's holidays.
-        
-        Args:
-            status: Filter by status (pending, approved, rejected, cancelled)
-            year: Filter by year (defaults to current)
-            
-        Returns:
-            List of Holiday records
-        """
-        params = {}
-        if status:
-            params["status"] = status
-        if year:
-            params["year"] = year
-        
-        # Build query string
-        query = "&".join(f"{k}={v}" for k, v in params.items())
-        path = f"/api/holidays?{query}" if query else "/api/holidays"
-        
-        data = await self._get(path)
+    async def get_all_public_holidays(self) -> list[PublicHoliday]:
+        """Get all UK public holidays."""
+        data = await self._get("/api/holidays/public", authenticated=False)
         holidays_data = data.get("data", [])
-        return [Holiday(**h) for h in holidays_data]
+        return [PublicHoliday(**h) for h in holidays_data]
     
-    async def book_holiday(self, start_date: str, days: float, end_date: str | None = None, notes: str | None = None) -> Holiday:
-        """Book a new holiday.
+    # ==================== Holidays (Requires Auth) ====================
+    
+    async def get_holiday_entitlement(self) -> HolidayEntitlement:
+        """Get current user's holiday entitlement.
+        
+        Returns:
+            HolidayEntitlement with total, used, remaining, pending
+        """
+        data = await self._get("/api/holidays/entitlement")
+        return HolidayEntitlement(**data["data"])
+    
+    async def get_my_holidays(self) -> list[HolidayRequest]:
+        """Get current user's holiday requests.
+        
+        Returns:
+            List of HolidayRequest records
+        """
+        data = await self._get("/api/holidays/mine")
+        holidays_data = data.get("data", [])
+        return [HolidayRequest(**h) for h in holidays_data]
+    
+    async def request_holiday(
+        self, 
+        start: str, 
+        end: str, 
+        note: str | None = None,
+        half_day: str | None = None
+    ) -> HolidayRequest:
+        """Request a new holiday.
         
         Args:
-            start_date: Start date in DD/MM/YYYY format (will be converted to ISO)
-            days: Number of days to book
-            end_date: Optional end date in DD/MM/YYYY format (calculated if not provided)
-            notes: Optional notes for the request
+            start: Start date in YYYY-MM-DD format
+            end: End date in YYYY-MM-DD format
+            note: Optional note for the request
+            half_day: null, "AM", or "PM" for first day
             
         Returns:
-            Created Holiday record
+            Created HolidayRequest
         """
         payload = {
-            "start_date": start_date,
-            "days": days,
+            "start": start,
+            "end": end,
+            "half_day": half_day,
         }
-        if end_date:
-            payload["end_date"] = end_date
-        if notes:
-            payload["notes"] = notes
+        if note:
+            payload["note"] = note
         
-        data = await self._post("/api/holidays", payload)
-        return Holiday(**data["data"])
+        data = await self._post("/api/holidays/request", payload)
+        return HolidayRequest(**data["data"])
     
-    async def cancel_holiday(self, holiday_id: int) -> bool:
-        """Cancel a pending holiday request.
+    async def cancel_holiday(self, holiday_id: int) -> dict[str, Any]:
+        """Cancel a holiday request.
         
         Args:
             holiday_id: ID of the holiday to cancel
             
         Returns:
-            True if successfully cancelled
+            Cancellation result with days returned
         """
-        await self._post(f"/api/holidays/{holiday_id}/cancel", {})
-        return True
+        data = await self._delete(f"/api/holidays/{holiday_id}")
+        return data["data"]
     
-    async def get_next_public_holiday(self) -> PublicHoliday:
-        """Get the next upcoming UK public holiday.
+    # ==================== User & Directory ====================
+    
+    async def get_current_user(self) -> UserProfile:
+        """Get current authenticated user's profile."""
+        data = await self._get("/api/users/me")
+        return UserProfile(**data["data"])
+    
+    async def search_users(self, query: str) -> list[UserSearchResult]:
+        """Search for users in the directory.
         
+        Args:
+            query: Search string (name, email, etc.)
+            
         Returns:
-            PublicHoliday record
+            List of matching users
         """
-        data = await self._get("/api/holidays/next-public")
-        return PublicHoliday(**data["data"])
+        data = await self._get(f"/api/users/search?q={query}")
+        users_data = data.get("data", [])
+        return [UserSearchResult(**u) for u in users_data]
+    
+    async def get_user_status(self, user_id: int) -> dict[str, Any]:
+        """Get a user's current status (working, on holiday, clocked in)."""
+        data = await self._get(f"/api/users/{user_id}/status")
+        return data["data"]
+    
+    async def get_directory(self) -> list[UserSearchResult]:
+        """Get full company directory."""
+        data = await self._get("/api/directory")
+        users_data = data.get("data", [])
+        return [UserSearchResult(**u) for u in users_data]
+    
+    # ==================== Slack Account Linking ====================
     
     async def link_slack_account(
-        self, 
-        email: str, 
-        password: str, 
-        slack_user_id: str
-    ) -> dict:
+        self,
+        slack_user_id: str,
+        slack_email: str,
+        slack_username: str,
+        intranet_email: str,
+        intranet_password: str
+    ) -> dict[str, Any]:
         """Link a Slack account to an intranet user account.
         
         Args:
-            email: User's intranet email address
-            password: User's intranet password
-            slack_user_id: Slack user ID (from command context)
+            slack_user_id: Slack user ID (U1234567890)
+            slack_email: User's Slack email
+            slack_username: User's Slack username
+            intranet_email: User's intranet/company email
+            intranet_password: User's intranet password
             
         Returns:
-            API response dict with success status and message
+            API response with success status and user info
         """
         payload = {
-            "email": email,
-            "password": password,
             "slack_user_id": slack_user_id,
+            "slack_email": slack_email,
+            "slack_username": slack_username,
+            "intranet_email": intranet_email,
+            "intranet_password": intranet_password,
         }
         
         data = await self._post("/api/auth/slack-link", payload)
