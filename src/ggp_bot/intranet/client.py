@@ -67,6 +67,16 @@ class IntranetClient:
         
         response = await self.client.post(path, json=json_data)
         
+        # Log 422 errors with full response for debugging
+        if response.status_code == 422:
+            try:
+                error_body = response.text
+                print(f"DEBUG: 422 Error on {path}")
+                print(f"DEBUG: Request payload: {json_data}")
+                print(f"DEBUG: Response: {error_body}")
+            except Exception:
+                pass
+        
         if response.status_code >= 400:
             try:
                 data = response.json()
