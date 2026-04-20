@@ -9,6 +9,7 @@ from ggp_bot.slack.handlers.commands import (
     handle_intranet_status_command,
     handle_next_bank_holiday_command,
     handle_whoami_command,
+    handle_connect_command,
 )
 
 
@@ -23,6 +24,7 @@ app.command("/ggp-ping")(handle_ping_command)
 app.command("/intranet-status")(handle_intranet_status_command)
 app.command("/next-bank-holiday")(handle_next_bank_holiday_command)
 app.command("/whoami")(handle_whoami_command)
+app.command("/connect")(handle_connect_command)
 
 
 async def start_app() -> None:
