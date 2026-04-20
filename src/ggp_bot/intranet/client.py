@@ -30,7 +30,7 @@ class IntranetClient:
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "ggp-bot/0.3.1",
+            "User-Agent": "ggp-bot/0.3.3 (API v0.99.6)",
         }
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -66,16 +66,6 @@ class IntranetClient:
             raise ValueError("Authentication required but no token provided")
         
         response = await self.client.post(path, json=json_data)
-        
-        # Log 422 errors with full response for debugging
-        if response.status_code == 422:
-            try:
-                error_body = response.text
-                print(f"DEBUG: 422 Error on {path}")
-                print(f"DEBUG: Request payload: {json_data}")
-                print(f"DEBUG: Response: {error_body}")
-            except Exception:
-                pass
         
         if response.status_code >= 400:
             try:
@@ -200,6 +190,24 @@ class IntranetClient:
     async def get_current_user(self) -> UserProfile:
         """Get current authenticated user's profile."""
         data = await self._get("/api/users/me")
+        return UserProfile(**data["data"])
+    
+    async def get_user_by_slack_id(self, slack_user_id: str) -> UserProfile:
+        """Get intranet user profile by Slack user ID.
+        
+        This is the primary way for the bot to identify which intranet
+        user is associated with a Slack user.
+        
+        Args:
+            slack_user_id: Slack user ID (e.g., U1234567890)
+            
+        Returns:
+            UserProfile for the linked intranet user
+            
+        Raises:
+            IntranetSlackNotLinkedError: If Slack user not linked to any intranet account
+        """
+        data = await self._get(f"/api/users/by-slack-id/{slack_user_id}")
         return UserProfile(**data["data"])
     
     async def search_users(self, query: str) -> list[UserSearchResult]:

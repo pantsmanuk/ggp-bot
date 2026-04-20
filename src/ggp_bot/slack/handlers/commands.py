@@ -5,7 +5,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 
 from ggp_bot.config import settings
 from ggp_bot.intranet.client import IntranetClient
-from ggp_bot.intranet.errors import IntranetError, IntranetInsufficientDaysError
+from ggp_bot.intranet.errors import IntranetError, IntranetInsufficientDaysError, IntranetSlackNotLinkedError
 
 
 async def handle_ping_command(ack: AsyncAck, respond: AsyncRespond) -> None:
@@ -221,21 +221,29 @@ async def handle_request_holiday_command(
 
 async def handle_whoami_command(
     ack: AsyncAck, 
-    respond: AsyncRespond
+    respond: AsyncRespond,
+    command: dict
 ) -> None:
-    """Handle the /whoami command."""
+    """Handle the /whoami command.
+    
+    Uses the /users/by-slack-id/{slackId} endpoint to find which intranet
+    user is linked to the calling Slack user.
+    """
     await ack()
     
     if not settings.intranet_api_token:
         await respond(":x: Authentication required. Please contact an administrator.")
         return
     
+    slack_user_id = command.get("user_id")
+    
     async with IntranetClient(
         base_url=settings.intranet_base_url,
         token=settings.intranet_api_token
     ) as intranet:
         try:
-            user = await intranet.get_current_user()
+            # Use the new by-slack-id endpoint (API v0.99.6)
+            user = await intranet.get_user_by_slack_id(slack_user_id)
             
             lines = [f"*Your Profile* :bust_in_silhouette:"]
             lines.append(f"• Name: {user.name}")
@@ -254,10 +262,14 @@ async def handle_whoami_command(
             
             await respond("\n".join(lines))
         except IntranetError as e:
-            if e.error_code == "UNAUTHENTICATED":
+            if e.error_code == "SLACK_USER_NOT_LINKED":
                 await respond(
-                    f":x: Your Slack account is not linked to the intranet.\n"
-                    f"Please run `/connect` to link your accounts."
+                    f":x: *Your Slack account is not linked to the intranet.*\n"
+                    f"Please run `/connect <intranet-email> <password>` to link your accounts."
+                )
+            elif e.error_code == "UNAUTHENTICATED":
+                await respond(
+                    f":x: Authentication failed. Please contact an administrator."
                 )
             else:
                 await respond(f":x: Failed to fetch profile: {e}")

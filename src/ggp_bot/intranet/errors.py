@@ -47,6 +47,11 @@ class IntranetOverlappingAbsenceError(IntranetError):
     pass
 
 
+class IntranetSlackNotLinkedError(IntranetError):
+    """Slack user not linked to intranet account (SLACK_USER_NOT_LINKED)."""
+    pass
+
+
 class IntranetServerError(IntranetError):
     """Internal server error from intranet API."""
     pass
@@ -99,6 +104,8 @@ def raise_for_api_error(response_data: dict, status_code: int) -> None:
             raise IntranetInsufficientDaysError(message, error_code, details)
         case "OVERLAPPING_ABSENCE":
             raise IntranetOverlappingAbsenceError(message, error_code, details)
+        case "SLACK_USER_NOT_LINKED":
+            raise IntranetSlackNotLinkedError(message, error_code, details)
         case _:
             if status_code >= 500:
                 raise IntranetServerError(
