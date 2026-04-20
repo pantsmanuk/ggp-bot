@@ -1,4 +1,4 @@
-"""Pydantic models for intranet API responses."""
+"""Pydantic models for intranet API responses - v0.99.5."""
 
 from datetime import datetime
 from typing import Any
@@ -17,38 +17,14 @@ class HealthStatus(BaseModel):
     """Health check response data."""
     status: str
     version: str
-    timestamp: datetime
-
-
-class Holiday(BaseModel):
-    """Holiday/absence record."""
-    id: int
-    user_id: int
-    start_date: str = Field(description="Date in YYYY-MM-DD format")
-    end_date: str = Field(description="Date in YYYY-MM-DD format")
-    days: float
-    status: str = Field(description="pending, approved, rejected, cancelled")
-    type: str = Field(default="annual_leave", description="annual_leave, sick, etc.")
-    notes: str | None = None
-    requested_at: datetime | None = None
-    approved_by: int | None = None
-    approved_at: datetime | None = None
-
-
-class HolidayBalance(BaseModel):
-    """User's holiday entitlement summary."""
-    total_entitlement: float
-    days_used: float
-    days_remaining: float
-    pending_requests: float
-    year: int
+    timestamp: datetime | None = None
 
 
 class PublicHoliday(BaseModel):
     """UK public holiday (bank holiday)."""
     date: str = Field(description="Date in YYYY-MM-DD format")
-    note: str  # API returns 'note' with holiday name/description
     day_of_week: str
+    note: str
     days_until: int
     is_today: bool
     is_tomorrow: bool
@@ -64,16 +40,100 @@ class PublicHoliday(BaseModel):
         return self.note
 
 
+class HolidayEntitlement(BaseModel):
+    """User's holiday entitlement summary - from /holidays/entitlement."""
+    entitlement: dict[str, float] = Field(
+        description="Contains total, used, remaining, pending"
+    )
+    company_year: dict[str, str] = Field(
+        description="Contains start and end dates"
+    )
+    
+    @property
+    def total(self) -> float:
+        return self.entitlement.get("total", 0)
+    
+    @property
+    def used(self) -> float:
+        return self.entitlement.get("used", 0)
+    
+    @property
+    def remaining(self) -> float:
+        return self.entitlement.get("remaining", 0)
+    
+    @property
+    def pending(self) -> float:
+        return self.entitlement.get("pending", 0)
+
+
+class HolidayLinks(BaseModel):
+    """Links for holiday actions."""
+    cancel: str | None = None
+
+
+class HolidayRequest(BaseModel):
+    """Holiday/absence request record - from /holidays/mine."""
+    id: int
+    type: str = Field(default="holiday")
+    start: str = Field(description="ISO 8601 datetime string")
+    end: str = Field(description="ISO 8601 datetime string")
+    half_day: str | None = Field(default=None, description="AM, PM, or null")
+    working_days: float
+    note: str | None = None
+    approved: bool
+    links: HolidayLinks | None = None
+    
+    @property
+    def status(self) -> str:
+        """Human-readable status."""
+        return "approved" if self.approved else "pending"
+    
+    @property
+    def start_date(self) -> str:
+        """Extract date portion from start datetime."""
+        return self.start[:10] if self.start else ""
+    
+    @property
+    def end_date(self) -> str:
+        """Extract date portion from end datetime."""
+        return self.end[:10] if self.end else ""
+
+
 class UserProfile(BaseModel):
-    """User profile from intranet."""
+    """User profile from intranet - from /users/me."""
     id: int
     name: str
     email: str
     department: str | None = None
-    job_title: str | None = None
+    job_title: str | None = Field(default=None, alias="title")
     phone: str | None = None
     mobile: str | None = None
     location: str | None = None
     manager_id: int | None = None
+    slack_linked: bool = False
     slack_user_id: str | None = None
-    current_status: str | None = None
+
+
+class UserSearchResult(BaseModel):
+    """User search result from directory - from /users/search or /directory."""
+    id: int
+    name: str
+    given_name: str | None = None
+    email: str
+    department: str | None = None
+    title: str | None = None
+    slack_linked: bool = False
+
+
+class UserStatus(BaseModel):
+    """User's current work status - from /users/{id}/status."""
+    is_working: bool
+    clocked_in: bool
+    current_absence: dict[str, Any] | None = None
+
+
+class ApiErrorDetail(BaseModel):
+    """API error details from error responses."""
+    code: str
+    message: str
+    details: dict[str, Any] | None = None
