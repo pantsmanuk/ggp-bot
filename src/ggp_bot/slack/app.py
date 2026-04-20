@@ -4,12 +4,15 @@ from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
 from ggp_bot.config import settings
-from ggp_bot.slack.handlers.commands import handle_ping_command
+from ggp_bot.slack.handlers.commands import (
+    handle_ping_command,
+    handle_intranet_status_command,
+    handle_next_bank_holiday_command,
+    handle_whoami_command,
+)
 
 
 # Create the Bolt app
-# Socket Mode doesn't need request signing in the traditional sense,
-# but we still provide the signing secret for completeness
 app = AsyncApp(
     token=settings.slack_bot_token,
     signing_secret=settings.slack_signing_secret,
@@ -17,6 +20,9 @@ app = AsyncApp(
 
 # Register slash command handlers
 app.command("/ggp-ping")(handle_ping_command)
+app.command("/intranet-status")(handle_intranet_status_command)
+app.command("/next-bank-holiday")(handle_next_bank_holiday_command)
+app.command("/whoami")(handle_whoami_command)
 
 
 async def start_app() -> None:
