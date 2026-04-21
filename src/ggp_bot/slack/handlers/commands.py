@@ -443,11 +443,20 @@ async def handle_cancel_holiday_command(
             
             result = await intranet.cancel_holiday(holiday_id)
             
+            print(f"[DEBUG] cancel_holiday result: {result}")
+            
+            # Build response - days_returned is optional from API
+            days_text = ""
+            if 'days_returned' in result:
+                days_text = f"\n• Days returned: {result['days_returned']}"
+            elif 'working_days' in result:
+                days_text = f"\n• Working days: {result['working_days']}"
+            
             await respond(
                 f":white_check_mark: *Holiday Cancelled*\n"
                 f"• Request ID: #{holiday_id}\n"
-                f"• Status: {result.get('status', 'Cancelled')}\n"
-                f"• Days returned: {result.get('days_returned', 'N/A')}"
+                f"• Status: {result.get('status', 'Cancelled')}"
+                f"{days_text}"
             )
             
     except IntranetNotFoundError:
