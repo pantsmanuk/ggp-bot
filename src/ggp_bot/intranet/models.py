@@ -77,7 +77,9 @@ class HolidayRequest(BaseModel):
     type: str = Field(default="holiday")
     start: str = Field(description="ISO 8601 datetime string")
     end: str = Field(description="ISO 8601 datetime string")
-    half_day: str | None = Field(default=None, description="AM, PM, or null")
+    half_day: str | None = Field(default=None, description="AM, PM, or null (deprecated, use start_half_day/end_half_day)")
+    start_half_day: str | None = Field(default=None, description="AM, PM, or null for start date")
+    end_half_day: str | None = Field(default=None, description="AM, PM, or null for end date")
     working_days: float
     note: str | None = None
     approved: bool
@@ -97,6 +99,19 @@ class HolidayRequest(BaseModel):
     def end_date(self) -> str:
         """Extract date portion from end datetime."""
         return self.end[:10] if self.end else ""
+    
+    @property
+    def half_day_summary(self) -> str:
+        """Human-readable half-day summary."""
+        parts = []
+        if self.start_half_day:
+            parts.append(f"start {self.start_half_day}")
+        if self.end_half_day:
+            parts.append(f"end {self.end_half_day}")
+        if not parts and self.half_day:
+            # Legacy support
+            parts.append(f"{self.half_day}")
+        return f" ({', '.join(parts)})" if parts else ""
 
 
 class UserProfile(BaseModel):

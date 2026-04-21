@@ -16,10 +16,12 @@ from ggp_bot.intranet.errors import (
     IntranetError,
     IntranetAuthError,
     IntranetScopeError,
+    IntranetNotFoundError,
     IntranetInsufficientDaysError,
     IntranetSlackNotLinkedError,
 )
 from ggp_bot.intranet.token_storage import token_storage
+from ggp_bot.utils.date_parser import parse_holiday_request
 
 
 # ============================================================================
@@ -224,8 +226,13 @@ async def handle_request_holiday_command(
 ) -> None:
     """Handle the /request-holiday command.
     
-    Usage: /request-holiday <start-date> <end-date> [note]
-    Dates in YYYY-MM-DD format
+    Supports multiple date formats and half-day requests:
+    - /request-holiday <start> <end> [note]
+    - /request-holiday 23/04/2026 25/04/2026 Family vacation
+    - /request-holiday 23/04/2026 AM 25/04/2026 PM Working half days
+    
+    Date formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or 'DD Mon YYYY'
+    Half-day markers: AM or PM (optional, can be specified for start and/or end)
     """
     await ack()
     
@@ -237,18 +244,32 @@ async def handle_request_holiday_command(
     
     # Parse command arguments
     text = command.get("text", "").strip()
-    parts = text.split(None, 2)  # Split into max 3 parts
     
-    if len(parts) < 2:
+    if not text:
         await respond(
-            ":warning: *Usage:* `/request-holiday <start-date> <end-date> [note]`\n"
-            "Dates should be in YYYY-MM-DD format (e.g., 2026-05-01)\n"
-            "Example: `/request-holiday 2026-05-01 2026-05-05 Family vacation`"
+            ":warning: *Usage:* `/request-holiday <start> <end> [note]`\n"
+            "*Date formats:* YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or 'DD Mon YYYY'\n"
+            "*Half days:* Add AM or PM after a date\n"
+            "*Examples:*\n"
+            "• `/request-holiday 23/04/2026 25/04/2026 Family vacation`\n"
+            "• `/request-holiday 23/04/2026 AM 25/04/2026 PM Working half days`\n"
+            "• `/request-holiday 2026-04-23 2026-04-25 Doctor appointment`"
         )
         return
     
-    start_date, end_date = parts[0], parts[1]
-    note = parts[2] if len(parts) > 2 else None
+    try:
+        # Parse dates and half-day markers
+        start_date, end_date, start_half_day, end_half_day, note = parse_holiday_request(text)
+    except ValueError as e:
+        await respond(
+            f":warning: *Invalid date format:* {e}\n\n"
+            "*Supported formats:*\n"
+            "• ISO: 2026-04-23\n"
+            "• UK: 23/04/2026 or 23-04-2026\n"
+            "• Verbose: 23 Apr 2026\n\n"
+            "Example: `/request-holiday 23/04/2026 25/04/2026 Vacation`"
+        )
+        return
     
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
@@ -261,16 +282,25 @@ async def handle_request_holiday_command(
                 )
                 return
             
+            print(f"[DEBUG] Requesting holiday: {start_date} to {end_date}, start_half={start_half_day}, end_half={end_half_day}")
+            
             result = await intranet.request_holiday(
                 start=start_date,
                 end=end_date,
+                start_half_day=start_half_day,
+                end_half_day=end_half_day,
                 note=note
             )
+            
+            # Build response message
+            half_day_text = ""
+            if result.start_half_day or result.end_half_day:
+                half_day_text = f" {result.half_day_summary}"
             
             await respond(
                 f":white_check_mark: *Holiday Requested*\n"
                 f"• Request ID: #{result.id}\n"
-                f"• Dates: {result.start_date} to {result.end_date}\n"
+                f"• Dates: {result.start_date} to {result.end_date}{half_day_text}\n"
                 f"• Working days: {result.working_days}\n"
                 f"• Status: Pending approval"
             )
@@ -298,6 +328,89 @@ async def handle_request_holiday_command(
         )
     except IntranetError as e:
         await respond(f":x: Failed to request holiday: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def handle_cancel_holiday_command(
+    ack: AsyncAck,
+    respond: AsyncRespond,
+    command: dict
+) -> None:
+    """Handle the /cancel-holiday command.
+    
+    Usage: /cancel-holiday <holiday-id>
+    Cancels a pending holiday request by its ID.
+    """
+    await ack()
+    
+    slack_user_id = command.get("user_id")
+    
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    # Parse command arguments
+    text = command.get("text", "").strip()
+    
+    if not text:
+        await respond(
+            ":warning: *Usage:* `/cancel-holiday <holiday-id>`\n"
+            "Example: `/cancel-holiday 123`\n\n"
+            "Use `/my-holidays` to see your holiday IDs."
+        )
+        return
+    
+    # Parse holiday ID
+    try:
+        holiday_id = int(text.split()[0])
+    except ValueError:
+        await respond(
+            ":warning: *Invalid holiday ID*\n"
+            "Please provide a valid number.\n"
+            "Example: `/cancel-holiday 123`"
+        )
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # Check if user has write permission
+            if not intranet.has_scope("bot:holiday:write"):
+                await respond(
+                    ":x: *Permission Denied*\n"
+                    "Your account doesn't have permission to cancel holidays. "
+                    "Please contact an administrator."
+                )
+                return
+            
+            result = await intranet.cancel_holiday(holiday_id)
+            
+            await respond(
+                f":white_check_mark: *Holiday Cancelled*\n"
+                f"• Request ID: #{holiday_id}\n"
+                f"• Status: {result.get('status', 'Cancelled')}\n"
+                f"• Days returned: {result.get('days_returned', 'N/A')}"
+            )
+            
+    except IntranetNotFoundError:
+        await respond(
+            f":x: *Holiday not found*\n"
+            f"Could not find holiday request #{holiday_id}.\n"
+            "Use `/my-holidays` to see your current holiday requests."
+        )
+    except IntranetScopeError:
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Your account doesn't have permission to cancel holidays. "
+            "Please contact an administrator."
+        )
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to cancel holiday: {e}")
     except Exception as e:
         await respond(f":x: Unexpected error: {e}")
 
