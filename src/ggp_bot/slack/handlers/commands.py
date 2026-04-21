@@ -350,6 +350,8 @@ async def handle_request_holiday_command(
                 note=note
             )
             
+            print(f"[DEBUG] API result: id={result.id}, working_days={result.working_days}, start={result.start_date}, end={result.end_date}")
+            
             # Build response message with better formatting
             if result.start_date == result.end_date:
                 # Single day - show just one date
