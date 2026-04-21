@@ -189,9 +189,7 @@ async def handle_my_holidays_command(
             
             for h in holidays:
                 status_emoji = ":white_check_mark:" if h.approved else ":hourglass_flowing_sand:"
-                half_day_text = ""
-                if h.half_day:
-                    half_day_text = f" ({h.half_day})"
+                half_day_text = h.half_day_summary if h.start_half_day or h.end_half_day or h.half_day else ""
                 
                 lines.append(
                     f"• {status_emoji} #{h.id}: {h.start_date} to {h.end_date}"
