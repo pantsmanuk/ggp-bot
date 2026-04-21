@@ -445,12 +445,12 @@ async def handle_cancel_holiday_command(
             
             print(f"[DEBUG] cancel_holiday result: {result}")
             
-            # Build response - days_returned is optional from API
+            # Build response - API returns working_days_returned
             days_text = ""
-            if 'days_returned' in result:
+            if 'working_days_returned' in result:
+                days_text = f"\n• Days returned: {result['working_days_returned']}"
+            elif 'days_returned' in result:
                 days_text = f"\n• Days returned: {result['days_returned']}"
-            elif 'working_days' in result:
-                days_text = f"\n• Working days: {result['working_days']}"
             
             await respond(
                 f":white_check_mark: *Holiday Cancelled*\n"
