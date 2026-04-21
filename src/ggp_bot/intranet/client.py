@@ -75,6 +75,9 @@ class IntranetClient:
         This retrieves the user's stored token and creates a client configured
         to make requests on their behalf with their permissions/scopes.
         
+        The client verifies the token via /api/auth/verify to get the actual
+        scopes from the API (which may differ from what was stored).
+        
         Args:
             slack_user_id: The Slack user ID (e.g., U1234567890)
             
@@ -91,11 +94,31 @@ class IntranetClient:
                 f"No stored token for user {slack_user_id}. "
                 "Please link your account first with /connect"
             )
-        logger.debug(f"Retrieved stored token for user {slack_user_id} with scopes: {user_token.scopes}")
+        logger.debug(f"Retrieved stored token for user {slack_user_id}")
         
         # Create client with user's token
         base_url = settings.intranet_base_url
         client = cls(base_url=base_url, token=user_token.token)
+        
+        # Verify token with API to get actual scopes
+        try:
+            verify_data = await client.verify_token()
+            actual_scopes = verify_data.get("abilities", [])
+            logger.info(f"Token verified for user {slack_user_id}, actual scopes: {actual_scopes}")
+            
+            # Update stored token with correct scopes from API
+            if actual_scopes and actual_scopes != user_token.scopes:
+                logger.info(f"Updating stored scopes from {user_token.scopes} to {actual_scopes}")
+                token_storage.save_token(
+                    slack_user_id=slack_user_id,
+                    token=user_token.token,
+                    scopes=actual_scopes,
+                    expires_at=user_token.expires_at
+                )
+                user_token = token_storage.get_token(slack_user_id)
+        except Exception as e:
+            logger.warning(f"Could not verify token scopes: {e}, using stored scopes: {user_token.scopes}")
+        
         client._user_token = user_token
         return client
     
