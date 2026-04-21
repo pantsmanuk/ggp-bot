@@ -1,6 +1,6 @@
 # ggp-bot
 
-**Version:** 0.3.3  
+**Version:** 0.4.0  
 **API Compatibility:** GGP Intranet API v0.99.6  
 
 Slack bot for GGP intranet integration and Jenkins automation.
@@ -51,6 +51,7 @@ ggp-bot
 | `SLACK_APP_TOKEN` | Socket Mode connection (xapp-) | Slack app settings → Basic Information → App-Level Tokens |
 | `INTRANET_BASE_URL` | Laravel API root | `https://intranet.ggpsystems.co.uk` |
 | `INTRANET_API_TOKEN` | Bearer token for API | Intranet admin / API team |
+| `TOKEN_ENCRYPTION_KEY` | Fernet key for user token encryption | Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 | `JENKINS_URL` | Jenkins root (Phase 2) | Future |
 | `JENKINS_USER` / `JENKINS_TOKEN` | Jenkins API creds (Phase 2) | Future |
 
@@ -107,6 +108,7 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 
 ## Version History
 
+- **0.4.0** - Secure per-user token storage with SQLite + Fernet encryption, two-level authentication (bot + user tokens), improved scope-based error handling
 - **0.3.3** - API v0.99.6 support: `/users/by-slack-id` endpoint, `SLACK_USER_NOT_LINKED` error handling
 - **0.3.2** - Fix `/connect` command to support passwords with spaces
 - **0.3.1** - Align with API v0.99.5: correct endpoints, models, error handling

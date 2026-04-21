@@ -51,3 +51,7 @@ htmlcov/
 
 # Slack-specific (in case you store tokens locally for testing)
 .slack/
+
+# User token storage (contains sensitive Bearer tokens)
+data/
+!data/.gitkeep
