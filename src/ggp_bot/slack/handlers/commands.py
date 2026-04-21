@@ -350,15 +350,32 @@ async def handle_request_holiday_command(
                 note=note
             )
             
-            # Build response message
-            half_day_text = ""
-            if result.start_half_day or result.end_half_day:
-                half_day_text = f" {result.half_day_summary}"
+            # Build response message with better formatting
+            if result.start_date == result.end_date:
+                # Single day - show just one date
+                if result.start_half_day:
+                    date_display = f"{result.start_date} {result.start_half_day}"
+                elif result.end_half_day:
+                    date_display = f"{result.start_date} {result.end_half_day}"
+                elif result.half_day:
+                    date_display = f"{result.start_date} {result.half_day}"
+                else:
+                    date_display = result.start_date
+            else:
+                # Multi-day - show range with optional half-day markers
+                date_parts = [result.start_date]
+                if result.start_half_day:
+                    date_parts.append(result.start_half_day)
+                date_parts.append("to")
+                date_parts.append(result.end_date)
+                if result.end_half_day:
+                    date_parts.append(result.end_half_day)
+                date_display = " ".join(date_parts)
             
             await respond(
                 f":white_check_mark: *Holiday Requested*\n"
                 f"• Request ID: #{result.id}\n"
-                f"• Dates: {result.start_date} to {result.end_date}{half_day_text}\n"
+                f"• Date(s): {date_display}\n"
                 f"• Working days: {result.working_days}\n"
                 f"• Status: Pending approval"
             )
