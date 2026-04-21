@@ -277,12 +277,17 @@ async def handle_request_holiday_command(
     
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # DEBUG: Log available scopes
+            print(f"[DEBUG] User {slack_user_id} scopes: {intranet.scopes}")
+            print(f"[DEBUG] Has bot:holiday:write? {intranet.has_scope('bot:holiday:write')}")
+            
             # Check if user has write permission
             if not intranet.has_scope("bot:holiday:write"):
                 await respond(
                     ":x: *Permission Denied*\n"
-                    "Your account doesn't have permission to request holidays. "
-                    "Please contact an administrator."
+                    f"Your token has these scopes: {', '.join(intranet.scopes) or 'none'}\n"
+                    "Missing required scope: bot:holiday:write\n"
+                    "Please contact an administrator to update your permissions."
                 )
                 return
             

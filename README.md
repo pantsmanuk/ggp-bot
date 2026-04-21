@@ -1,6 +1,6 @@
 # ggp-bot
 
-**Version:** 0.5.1  
+**Version:** 0.5.2  
 **API Compatibility:** GGP Intranet API v0.99.6  
 
 Slack bot for GGP intranet integration and Jenkins automation.
