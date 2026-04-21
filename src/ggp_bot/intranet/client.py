@@ -1,4 +1,10 @@
-"""Intranet API client for GGP Laravel backend - aligned with API v0.99.5."""
+"""Intranet API client for GGP Laravel backend - aligned with API v0.99.5.
+
+This client supports both bot-level authentication (for public endpoints) and
+per-user authentication (for user-specific endpoints). After a user links their
+Slack account via /connect, they receive their own Bearer token which is stored
+and used for subsequent authenticated requests.
+"""
 
 import httpx
 from typing import Any
@@ -12,10 +18,26 @@ from ggp_bot.intranet.models import (
     UserProfile,
     UserSearchResult,
 )
+from ggp_bot.intranet.token_storage import token_storage, UserToken
+from ggp_bot.config import settings
 
 
 class IntranetClient:
-    """HTTP client for GGP intranet API v0.99.5+."""
+    """HTTP client for GGP intranet API v0.99.5+.
+    
+    Supports both global bot token (for health checks, public info) and
+    per-user tokens (for user-specific operations like holiday requests).
+    
+    To use per-user authentication:
+        client = await IntranetClient.for_user(slack_user_id)
+        # or
+        async with IntranetClient.for_user(slack_user_id) as client:
+            ...
+    """
+    
+    # API version alignment
+    API_VERSION = "v0.99.5"
+    BOT_VERSION = "0.4.0"
     
     def __init__(self, base_url: str, token: str | None = None):
         """Initialize the intranet client.
@@ -26,11 +48,12 @@ class IntranetClient:
         """
         self.base_url = base_url.rstrip("/")
         self.token = token
+        self._user_token: UserToken | None = None
         
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "ggp-bot/0.3.3 (API v0.99.6)",
+            "User-Agent": f"ggp-bot/{self.BOT_VERSION} (API {self.API_VERSION})",
         }
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -40,6 +63,72 @@ class IntranetClient:
             headers=headers,
             timeout=30.0,
         )
+    
+    @classmethod
+    async def for_user(cls, slack_user_id: str) -> "IntranetClient":
+        """Create a client authenticated as a specific Slack user.
+        
+        This retrieves the user's stored token and creates a client configured
+        to make requests on their behalf with their permissions/scopes.
+        
+        Args:
+            slack_user_id: The Slack user ID (e.g., U1234567890)
+            
+        Returns:
+            IntranetClient configured with the user's token
+            
+        Raises:
+            ValueError: If the user has no stored token (not linked)
+        """
+        user_token = token_storage.get_token(slack_user_id)
+        if not user_token:
+            raise ValueError(
+                f"No stored token for user {slack_user_id}. "
+                "Please link your account first with /connect"
+            )
+        
+        # Create client with user's token
+        base_url = settings.intranet_base_url
+        client = cls(base_url=base_url, token=user_token.token)
+        client._user_token = user_token
+        return client
+    
+    @classmethod
+    def with_bot_token(cls) -> "IntranetClient":
+        """Create a client using the global bot token.
+        
+        Use this for endpoints that don't require user-specific permissions
+        or when making requests on behalf of the bot itself.
+        
+        Returns:
+            IntranetClient configured with the bot token
+        """
+        base_url = settings.intranet_base_url
+        token = settings.intranet_api_token
+        return cls(base_url=base_url, token=token)
+    
+    @property
+    def is_user_authenticated(self) -> bool:
+        """Check if this client is using a per-user token."""
+        return self._user_token is not None
+    
+    @property
+    def scopes(self) -> list[str]:
+        """Get the scopes available to the current token."""
+        if self._user_token:
+            return self._user_token.scopes
+        return []
+    
+    def has_scope(self, scope: str) -> bool:
+        """Check if the current token has a specific scope.
+        
+        Args:
+            scope: The scope to check (e.g., "bot:holiday:write")
+            
+        Returns:
+            True if the token has the scope, False otherwise
+        """
+        return scope in self.scopes
     
     async def _get(self, path: str, authenticated: bool = True) -> dict[str, Any]:
         """Make a GET request to the API."""
@@ -122,6 +211,24 @@ class IntranetClient:
         data = await self._get("/api/holidays/public", authenticated=False)
         holidays_data = data.get("data", [])
         return [PublicHoliday(**h) for h in holidays_data]
+    
+    # ==================== Authentication ====================
+    
+    async def verify_token(self) -> dict[str, Any]:
+        """Verify the current token and get token metadata.
+        
+        Calls POST /api/auth/verify to validate the token and retrieve
+        information about the authenticated user and token scopes.
+        
+        Returns:
+            Token verification data including:
+            - valid: bool
+            - user: UserProfile
+            - scopes: list of scopes
+            - expires_at: expiry timestamp (if applicable)
+        """
+        data = await self._post("/api/auth/verify", {})
+        return data.get("data", {})
     
     # ==================== Holidays (Requires Auth) ====================
     
@@ -246,6 +353,9 @@ class IntranetClient:
     ) -> dict[str, Any]:
         """Link a Slack account to an intranet user account.
         
+        After successful linking, the API returns a personal Bearer token
+        for the user which is stored for subsequent authenticated requests.
+        
         Args:
             slack_user_id: Slack user ID (U1234567890)
             slack_email: User's Slack email
@@ -254,7 +364,7 @@ class IntranetClient:
             intranet_password: User's intranet password
             
         Returns:
-            API response with success status and user info
+            API response with success status, user info, and token data
         """
         payload = {
             "slack_user_id": slack_user_id,
@@ -265,6 +375,22 @@ class IntranetClient:
         }
         
         data = await self._post("/api/auth/slack-link", payload)
+        
+        # Extract and store the token if provided
+        token_data = data.get("data", {}).get("token")
+        if token_data and data.get("success", False):
+            token = token_data.get("token")
+            scopes = token_data.get("scopes", [])
+            expires_at = token_data.get("expires_at")
+            
+            # Store the token for future use
+            token_storage.save_token(
+                slack_user_id=slack_user_id,
+                token=token,
+                scopes=scopes,
+                expires_at=expires_at
+            )
+        
         return {
             "success": data.get("success", False),
             "message": data.get("message", ""),

@@ -1,12 +1,30 @@
-"""Slack slash command handlers - aligned with API v0.99.5."""
+"""Slack slash command handlers - aligned with API v0.99.5.
+
+This module handles all Slack slash commands. User-specific commands now use
+per-user authentication via stored tokens obtained during the /connect flow.
+
+Public endpoints (health check, public holidays) use the bot token, while
+user-specific endpoints (holiday requests, profile) use the user's personal token.
+"""
 
 from slack_bolt.async_app import AsyncAck, AsyncRespond
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ggp_bot.config import settings
 from ggp_bot.intranet.client import IntranetClient
-from ggp_bot.intranet.errors import IntranetError, IntranetInsufficientDaysError, IntranetSlackNotLinkedError
+from ggp_bot.intranet.errors import (
+    IntranetError,
+    IntranetAuthError,
+    IntranetScopeError,
+    IntranetInsufficientDaysError,
+    IntranetSlackNotLinkedError,
+)
+from ggp_bot.intranet.token_storage import token_storage
 
+
+# ============================================================================
+# Public Commands (No Authentication Required)
+# ============================================================================
 
 async def handle_ping_command(ack: AsyncAck, respond: AsyncRespond) -> None:
     """Handle the /ggp-ping command."""
@@ -22,10 +40,8 @@ async def handle_intranet_status_command(
     """Handle the /intranet-status command."""
     await ack()
     
-    async with IntranetClient(
-        base_url=settings.intranet_base_url,
-        token=settings.intranet_api_token
-    ) as intranet:
+    # Health check uses bot token or no auth
+    async with IntranetClient.with_bot_token() as intranet:
         try:
             health = await intranet.health_check()
             
@@ -50,10 +66,8 @@ async def handle_next_bank_holiday_command(
     """Handle the /next-bank-holiday command."""
     await ack()
     
-    async with IntranetClient(
-        base_url=settings.intranet_base_url,
-        token=settings.intranet_api_token
-    ) as intranet:
+    # Public holidays endpoint doesn't need auth
+    async with IntranetClient.with_bot_token() as intranet:
         try:
             holiday = await intranet.get_next_public_holiday()
             
@@ -73,22 +87,46 @@ async def handle_next_bank_holiday_command(
             await respond(f":x: Unexpected error: {e}")
 
 
+# ============================================================================
+# User-Specific Commands (Require Per-User Authentication)
+# ============================================================================
+
+def _check_user_linked(slack_user_id: str) -> bool:
+    """Check if a user has linked their account.
+    
+    Args:
+        slack_user_id: The Slack user ID
+        
+    Returns:
+        True if the user has a stored token
+    """
+    return token_storage.has_token(slack_user_id)
+
+
+async def _handle_not_linked(respond: AsyncRespond) -> None:
+    """Send a standard response for users who haven't linked their account."""
+    await respond(
+        ":x: *Your Slack account is not linked to the intranet.*\n"
+        "Please run `/connect <intranet-email> <password>` to link your accounts."
+    )
+
+
 async def handle_holiday_entitlement_command(
     ack: AsyncAck, 
-    respond: AsyncRespond
+    respond: AsyncRespond,
+    command: dict
 ) -> None:
     """Handle the /holiday-entitlement command."""
     await ack()
     
-    if not settings.intranet_api_token:
-        await respond(":x: Authentication required. Please contact an administrator.")
+    slack_user_id = command.get("user_id")
+    
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
         return
     
-    async with IntranetClient(
-        base_url=settings.intranet_base_url,
-        token=settings.intranet_api_token
-    ) as intranet:
-        try:
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
             entitlement = await intranet.get_holiday_entitlement()
             
             year_start = entitlement.company_year.get("start", "N/A")
@@ -102,28 +140,39 @@ async def handle_holiday_entitlement_command(
                 f"• Pending: {entitlement.pending} days\n"
                 f"• Company Year: {year_start} to {year_end}"
             )
-        except IntranetError as e:
-            await respond(f":x: Failed to fetch entitlement: {e}")
-        except Exception as e:
-            await respond(f":x: Unexpected error: {e}")
+    except IntranetScopeError:
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Your account doesn't have permission to view holiday entitlement. "
+            "Please contact an administrator."
+        )
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to fetch entitlement: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
 
 
 async def handle_my_holidays_command(
     ack: AsyncAck, 
-    respond: AsyncRespond
+    respond: AsyncRespond,
+    command: dict
 ) -> None:
     """Handle the /my-holidays command."""
     await ack()
     
-    if not settings.intranet_api_token:
-        await respond(":x: Authentication required. Please contact an administrator.")
+    slack_user_id = command.get("user_id")
+    
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
         return
     
-    async with IntranetClient(
-        base_url=settings.intranet_base_url,
-        token=settings.intranet_api_token
-    ) as intranet:
-        try:
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
             holidays = await intranet.get_my_holidays()
             
             if not holidays:
@@ -147,10 +196,21 @@ async def handle_my_holidays_command(
             
             await respond("\n".join(lines))
             
-        except IntranetError as e:
-            await respond(f":x: Failed to fetch holidays: {e}")
-        except Exception as e:
-            await respond(f":x: Unexpected error: {e}")
+    except IntranetScopeError:
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Your account doesn't have permission to view holidays. "
+            "Please contact an administrator."
+        )
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to fetch holidays: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
 
 
 async def handle_request_holiday_command(
@@ -165,8 +225,10 @@ async def handle_request_holiday_command(
     """
     await ack()
     
-    if not settings.intranet_api_token:
-        await respond(":x: Authentication required. Please contact an administrator.")
+    slack_user_id = command.get("user_id")
+    
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
         return
     
     # Parse command arguments
@@ -184,11 +246,17 @@ async def handle_request_holiday_command(
     start_date, end_date = parts[0], parts[1]
     note = parts[2] if len(parts) > 2 else None
     
-    async with IntranetClient(
-        base_url=settings.intranet_base_url,
-        token=settings.intranet_api_token
-    ) as intranet:
-        try:
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # Check if user has write permission
+            if not intranet.has_scope("bot:holiday:write"):
+                await respond(
+                    ":x: *Permission Denied*\n"
+                    "Your account doesn't have permission to request holidays. "
+                    "Please contact an administrator."
+                )
+                return
+            
             result = await intranet.request_holiday(
                 start=start_date,
                 end=end_date,
@@ -203,20 +271,31 @@ async def handle_request_holiday_command(
                 f"• Status: Pending approval"
             )
             
-        except IntranetInsufficientDaysError as e:
-            details = e.details or {}
-            shortfall = details.get("shortfall", "unknown")
-            remaining = details.get("remaining_days", "unknown")
-            await respond(
-                f":x: *Insufficient Holiday Days*\n"
-                f"You don't have enough days remaining.\n"
-                f"• Remaining: {remaining} days\n"
-                f"• Shortfall: {shortfall} days"
-            )
-        except IntranetError as e:
-            await respond(f":x: Failed to request holiday: {e}")
-        except Exception as e:
-            await respond(f":x: Unexpected error: {e}")
+    except IntranetInsufficientDaysError as e:
+        details = e.details or {}
+        shortfall = details.get("shortfall", "unknown")
+        remaining = details.get("remaining_days", "unknown")
+        await respond(
+            f":x: *Insufficient Holiday Days*\n"
+            f"You don't have enough days remaining.\n"
+            f"• Remaining: {remaining} days\n"
+            f"• Shortfall: {shortfall} days"
+        )
+    except IntranetScopeError:
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Your account doesn't have permission to request holidays. "
+            "Please contact an administrator."
+        )
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to request holiday: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
 
 
 async def handle_whoami_command(
@@ -231,17 +310,14 @@ async def handle_whoami_command(
     """
     await ack()
     
-    if not settings.intranet_api_token:
-        await respond(":x: Authentication required. Please contact an administrator.")
-        return
-    
     slack_user_id = command.get("user_id")
     
-    async with IntranetClient(
-        base_url=settings.intranet_base_url,
-        token=settings.intranet_api_token
-    ) as intranet:
-        try:
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
             # Use the new by-slack-id endpoint (API v0.99.6)
             user = await intranet.get_user_by_slack_id(slack_user_id)
             
@@ -260,21 +336,26 @@ async def handle_whoami_command(
             slack_status = ":white_check_mark: Linked" if user.slack_linked else ":x: Not linked"
             lines.append(f"• Slack: {slack_status}")
             
+            # Show token scopes for debugging (optional)
+            if intranet.scopes:
+                lines.append(f"• Permissions: {', '.join(intranet.scopes[:3])}{'...' if len(intranet.scopes) > 3 else ''}")
+            
             await respond("\n".join(lines))
-        except IntranetError as e:
-            if e.error_code == "SLACK_USER_NOT_LINKED":
-                await respond(
-                    f":x: *Your Slack account is not linked to the intranet.*\n"
-                    f"Please run `/connect <intranet-email> <password>` to link your accounts."
-                )
-            elif e.error_code == "UNAUTHENTICATED":
-                await respond(
-                    f":x: Authentication failed. Please contact an administrator."
-                )
-            else:
-                await respond(f":x: Failed to fetch profile: {e}")
-        except Exception as e:
-            await respond(f":x: Unexpected error: {e}")
+            
+    except IntranetSlackNotLinkedError:
+        await respond(
+            f":x: *Your Slack account is not linked to the intranet.*\n"
+            f"Please run `/connect <intranet-email> <password>` to link your accounts."
+        )
+    except IntranetAuthError:
+        await respond(
+            f":x: *Authentication Failed*\n"
+            f"Your session may have expired. Please run `/connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to fetch profile: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
 
 
 async def handle_connect_command(
@@ -286,6 +367,9 @@ async def handle_connect_command(
     """Handle the /connect command for Slack account linking.
     
     Usage: /connect <intranet-email> <intranet-password>
+    
+    After successful linking, the API returns a personal Bearer token which
+    is stored and used for subsequent authenticated requests by this user.
     """
     await ack()
     
@@ -326,14 +410,8 @@ async def handle_connect_command(
     if not slack_email:
         slack_email = intranet_email
     
-    if not settings.intranet_api_token:
-        await respond(":x: Bot is not configured for intranet authentication.")
-        return
-    
-    async with IntranetClient(
-        base_url=settings.intranet_base_url,
-        token=settings.intranet_api_token
-    ) as intranet:
+    # Use bot token for the linking request (requires bot:write scope)
+    async with IntranetClient.with_bot_token() as intranet:
         try:
             result = await intranet.link_slack_account(
                 slack_user_id=slack_user_id,
@@ -346,16 +424,36 @@ async def handle_connect_command(
             if result.get("success"):
                 user_data = result.get("data", {}).get("user", {})
                 user_name = user_data.get("name", "your account")
+                token_data = result.get("data", {}).get("token", {})
+                scopes = token_data.get("scopes", [])
+                
+                scope_text = ""
+                if scopes:
+                    scope_text = f"\n• Permissions granted: {', '.join(scopes[:5])}"
+                    if len(scopes) > 5:
+                        scope_text += f" and {len(scopes) - 5} more"
                 
                 await respond(
                     f":white_check_mark: *Account linked successfully!*\n"
-                    f"Your Slack account is now connected to: {user_name}\n\n"
-                    f"You can now use commands like `/whoami` and `/my-holidays`."
+                    f"Your Slack account is now connected to: {user_name}\n"
+                    f"{scope_text}\n\n"
+                    f"You can now use commands like `/whoami`, `/my-holidays`, and `/request-holiday`."
                 )
             else:
                 message = result.get("message", "Unknown error")
                 await respond(f":x: Linking failed: {message}")
                 
+        except IntranetScopeError:
+            await respond(
+                ":x: *Bot Configuration Error*\n"
+                "The bot doesn't have permission to link accounts. "
+                "Please contact an administrator."
+            )
+        except IntranetAuthError:
+            await respond(
+                ":x: *Bot Authentication Error*\n"
+                "The bot is not properly configured. Please contact an administrator."
+            )
         except IntranetError as e:
             await respond(f":x: Failed to link account: {e}")
         except Exception as e:
