@@ -25,6 +25,55 @@ from ggp_bot.utils.date_parser import parse_holiday_request
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+def _format_holiday_dates(holiday) -> str:
+    """Format holiday dates based on type (half-day, single-day, or multi-day).
+    
+    Args:
+        holiday: HolidayRequest object
+        
+    Returns:
+        Formatted date string
+        
+    Formats:
+    - Half-day (same date, AM or PM): "23/04/2026 (AM)"
+    - Single day (same date, full): "23/04/2026"
+    - Multi-day: "23/04/2026 to 25/04/2026" or with half-day markers
+    """
+    from ggp_bot.utils.date_parser import format_date_uk
+    
+    start_date_uk = format_date_uk(holiday.start_date)
+    end_date_uk = format_date_uk(holiday.end_date)
+    
+    # Check if it's a single-day holiday (same start and end date)
+    if holiday.start_date == holiday.end_date:
+        # Single date - check for half-day
+        if holiday.start_half_day:
+            return f"{start_date_uk} ({holiday.start_half_day})"
+        elif holiday.end_half_day:
+            return f"{start_date_uk} ({holiday.end_half_day})"
+        elif holiday.half_day:
+            # Legacy support
+            return f"{start_date_uk} ({holiday.half_day})"
+        else:
+            # Full single day
+            return start_date_uk
+    else:
+        # Multi-day holiday
+        parts = []
+        parts.append(start_date_uk)
+        if holiday.start_half_day:
+            parts.append(f"({holiday.start_half_day})")
+        parts.append("to")
+        parts.append(end_date_uk)
+        if holiday.end_half_day:
+            parts.append(f"({holiday.end_half_day})")
+        return " ".join(parts)
+
+
+# ============================================================================
 # Public Commands (No Authentication Required)
 # ============================================================================
 
@@ -189,11 +238,13 @@ async def handle_my_holidays_command(
             
             for h in holidays:
                 status_emoji = ":white_check_mark:" if h.approved else ":hourglass_flowing_sand:"
-                half_day_text = h.half_day_summary if h.start_half_day or h.end_half_day or h.half_day else ""
+                
+                # Format display based on holiday type
+                date_display = _format_holiday_dates(h)
                 
                 lines.append(
-                    f"• {status_emoji} #{h.id}: {h.start_date} to {h.end_date}"
-                    f"{half_day_text} - {h.working_days} day(s) - {h.status}"
+                    f"• {status_emoji} #{h.id}: {date_display}"
+                    f" - {h.working_days} day(s) - {h.status}"
                 )
                 if h.note:
                     lines.append(f"  _Note: {h.note}_")
