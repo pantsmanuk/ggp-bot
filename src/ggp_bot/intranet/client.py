@@ -382,38 +382,49 @@ class IntranetClient:
         
         data = await self._post("/api/auth/slack-link", payload)
         
+        # DEBUG: Print full response structure
+        print(f"[DEBUG] link_slack_account response: {data}")
+        
         # Extract and store the token if provided
         # API may return token in different structures, try both:
         # Option 1: data.data.token { token: "...", scopes: [...] }
         # Option 2: data.data { plainTextToken: "...", scopes: [...] }
         response_data = data.get("data", {})
+        print(f"[DEBUG] response_data: {response_data}")
+        
         token_data = response_data.get("token")
+        print(f"[DEBUG] token_data from nested: {token_data}")
         
         # If no nested token object, check for direct fields in data.data
         if not token_data and "plainTextToken" in response_data:
+            print(f"[DEBUG] Using Laravel Sanctum format (plainTextToken)")
             token_data = {
                 "token": response_data.get("plainTextToken"),
                 "scopes": response_data.get("abilities", []),  # Laravel Sanctum uses 'abilities'
                 "expires_at": response_data.get("expires_at")
             }
         
+        print(f"[DEBUG] Final token_data: {token_data}, success: {data.get('success')}")
+        
         if token_data and data.get("success", False):
             token = token_data.get("token")
             scopes = token_data.get("scopes", [])
             expires_at = token_data.get("expires_at")
             
+            print(f"[DEBUG] Extracted token: {token[:10]}... if present, scopes: {scopes}")
+            
             # Store the token for future use
             if token:
-                logger.info(f"Storing token for user {slack_user_id} with scopes: {scopes}")
+                print(f"[DEBUG] Calling token_storage.save_token for {slack_user_id}")
                 token_storage.save_token(
                     slack_user_id=slack_user_id,
                     token=token,
                     scopes=scopes,
                     expires_at=expires_at
                 )
-                logger.info(f"Token stored successfully for user {slack_user_id}")
+                print(f"[DEBUG] Token saved to storage")
             else:
-                logger.warning(f"No token found in API response for user {slack_user_id}")
+                print(f"[DEBUG] No token value found despite token_data being present")
         
         return {
             "success": data.get("success", False),
