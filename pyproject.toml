@@ -1,6 +1,6 @@
 [project]
 name = "ggp-bot"
-version = "0.5.0"
+version = "0.5.1"
 description = "GGP Slack bot for intranet and Jenkins integration"
 requires-python = ">=3.11"
 dependencies = [

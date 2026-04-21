@@ -102,14 +102,15 @@ def parse_holiday_request(text: str) -> Tuple[str, str, str | None, str | None, 
     Returns:
         Tuple of (start_date, end_date, start_half_day, end_half_day, note)
         Dates are returned in ISO format (YYYY-MM-DD)
+        If only one date provided, end_date defaults to start_date (single-day booking)
         
     Raises:
         ValueError: If the format is invalid
     """
     parts = text.strip().split()
     
-    if len(parts) < 2:
-        raise ValueError("Please provide at least start and end dates")
+    if len(parts) < 1:
+        raise ValueError("Please provide at least a start date")
     
     # Look for half_day markers (AM/PM) which are not dates
     parsed_parts = []
@@ -156,11 +157,15 @@ def parse_holiday_request(text: str) -> Tuple[str, str, str | None, str | None, 
     half_days = [p[1] for p in parsed_parts if p[0] == 'half_day']
     notes = [p[1] for p in parsed_parts if p[0] == 'note']
     
-    if len(dates) < 2:
-        raise ValueError("Please provide both start and end dates")
+    if len(dates) < 1:
+        raise ValueError("Please provide at least a start date")
+    
+    if len(dates) > 2:
+        raise ValueError("Please provide at most two dates (start and end)")
     
     start_date = dates[0]
-    end_date = dates[1]
+    # If only one date provided, default end_date to start_date (single-day booking)
+    end_date = dates[1] if len(dates) >= 2 else start_date
     
     # Map half-day markers
     start_half_day = None

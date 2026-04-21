@@ -227,8 +227,10 @@ async def handle_request_holiday_command(
     """Handle the /request-holiday command.
     
     Supports multiple date formats and half-day requests:
-    - /request-holiday <start> <end> [note]
-    - /request-holiday 23/04/2026 25/04/2026 Family vacation
+    - /request-holiday <start> [end] [note]  (end defaults to start for single-day)
+    - /request-holiday 23/04/2026 Family vacation (single day)
+    - /request-holiday 23/04/2026 25/04/2026 Family vacation (multi-day)
+    - /request-holiday 23/04/2026 AM Doctor appointment (half day)
     - /request-holiday 23/04/2026 AM 25/04/2026 PM Working half days
     
     Date formats: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or 'DD Mon YYYY'
@@ -247,13 +249,15 @@ async def handle_request_holiday_command(
     
     if not text:
         await respond(
-            ":warning: *Usage:* `/request-holiday <start> <end> [note]`\n"
+            ":warning: *Usage:* `/request-holiday <start> [end] [note]`\n"
+            "*Single day:* Omit end date to book one day\n"
             "*Date formats:* YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, or 'DD Mon YYYY'\n"
             "*Half days:* Add AM or PM after a date\n"
             "*Examples:*\n"
-            "• `/request-holiday 23/04/2026 25/04/2026 Family vacation`\n"
-            "• `/request-holiday 23/04/2026 AM 25/04/2026 PM Working half days`\n"
-            "• `/request-holiday 2026-04-23 2026-04-25 Doctor appointment`"
+            "• `/request-holiday 23/04/2026 Family vacation` (single day)\n"
+            "• `/request-holiday 23/04/2026 25/04/2026 Family vacation` (multi-day)\n"
+            "• `/request-holiday 23/04/2026 AM Doctor appointment` (half day)\n"
+            "• `/request-holiday 23/04/2026 AM 25/04/2026 PM Working half days`"
         )
         return
     
