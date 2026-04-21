@@ -100,7 +100,11 @@ def _check_user_linked(slack_user_id: str) -> bool:
     Returns:
         True if the user has a stored token
     """
-    return token_storage.has_token(slack_user_id)
+    # DEBUG: Temporary diagnostic logging
+    has_token = token_storage.has_token(slack_user_id)
+    all_users = token_storage.get_all_users()
+    print(f"[DEBUG] _check_user_linked: user={slack_user_id}, has_token={has_token}, all_users={all_users}")
+    return has_token
 
 
 async def _handle_not_linked(respond: AsyncRespond) -> None:
