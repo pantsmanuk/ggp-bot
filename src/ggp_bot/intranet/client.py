@@ -7,6 +7,7 @@ and used for subsequent authenticated requests.
 """
 
 import httpx
+import logging
 from typing import Any
 
 from ggp_bot.intranet.errors import raise_for_api_error
@@ -20,6 +21,9 @@ from ggp_bot.intranet.models import (
 )
 from ggp_bot.intranet.token_storage import token_storage, UserToken
 from ggp_bot.config import settings
+
+# Logger for this module
+logger = logging.getLogger(__name__)
 
 
 class IntranetClient:
@@ -82,10 +86,12 @@ class IntranetClient:
         """
         user_token = token_storage.get_token(slack_user_id)
         if not user_token:
+            logger.warning(f"No stored token found for user {slack_user_id}")
             raise ValueError(
                 f"No stored token for user {slack_user_id}. "
                 "Please link your account first with /connect"
             )
+        logger.debug(f"Retrieved stored token for user {slack_user_id} with scopes: {user_token.scopes}")
         
         # Create client with user's token
         base_url = settings.intranet_base_url
@@ -377,19 +383,37 @@ class IntranetClient:
         data = await self._post("/api/auth/slack-link", payload)
         
         # Extract and store the token if provided
-        token_data = data.get("data", {}).get("token")
+        # API may return token in different structures, try both:
+        # Option 1: data.data.token { token: "...", scopes: [...] }
+        # Option 2: data.data { plainTextToken: "...", scopes: [...] }
+        response_data = data.get("data", {})
+        token_data = response_data.get("token")
+        
+        # If no nested token object, check for direct fields in data.data
+        if not token_data and "plainTextToken" in response_data:
+            token_data = {
+                "token": response_data.get("plainTextToken"),
+                "scopes": response_data.get("abilities", []),  # Laravel Sanctum uses 'abilities'
+                "expires_at": response_data.get("expires_at")
+            }
+        
         if token_data and data.get("success", False):
             token = token_data.get("token")
             scopes = token_data.get("scopes", [])
             expires_at = token_data.get("expires_at")
             
             # Store the token for future use
-            token_storage.save_token(
-                slack_user_id=slack_user_id,
-                token=token,
-                scopes=scopes,
-                expires_at=expires_at
-            )
+            if token:
+                logger.info(f"Storing token for user {slack_user_id} with scopes: {scopes}")
+                token_storage.save_token(
+                    slack_user_id=slack_user_id,
+                    token=token,
+                    scopes=scopes,
+                    expires_at=expires_at
+                )
+                logger.info(f"Token stored successfully for user {slack_user_id}")
+            else:
+                logger.warning(f"No token found in API response for user {slack_user_id}")
         
         return {
             "success": data.get("success", False),
