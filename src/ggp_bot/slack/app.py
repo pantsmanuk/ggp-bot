@@ -11,6 +11,7 @@ from ggp_bot.slack.handlers.commands import (
     handle_holiday_entitlement_command,
     handle_my_holidays_command,
     handle_request_holiday_command,
+    handle_cancel_holiday_command,
     handle_whoami_command,
     handle_connect_command,
 )
@@ -29,6 +30,7 @@ app.command("/next-bank-holiday")(handle_next_bank_holiday_command)
 app.command("/holiday-entitlement")(handle_holiday_entitlement_command)
 app.command("/my-holidays")(handle_my_holidays_command)
 app.command("/request-holiday")(handle_request_holiday_command)
+app.command("/cancel-holiday")(handle_cancel_holiday_command)
 app.command("/whoami")(handle_whoami_command)
 app.command("/connect")(handle_connect_command)
 

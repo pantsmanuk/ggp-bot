@@ -262,15 +262,19 @@ class IntranetClient:
         start: str, 
         end: str, 
         note: str | None = None,
-        half_day: str | None = None
+        start_half_day: str | None = None,
+        end_half_day: str | None = None,
+        half_day: str | None = None  # Deprecated: use start_half_day/end_half_day
     ) -> HolidayRequest:
         """Request a new holiday.
         
         Args:
-            start: Start date in YYYY-MM-DD format
-            end: End date in YYYY-MM-DD format
+            start: Start date (YYYY-MM-DD or DD/MM/YYYY)
+            end: End date (YYYY-MM-DD or DD/MM/YYYY)
             note: Optional note for the request
-            half_day: null, "AM", or "PM" for first day
+            start_half_day: "AM" or "PM" for start date (optional)
+            end_half_day: "AM" or "PM" for end date (optional)
+            half_day: Deprecated - use start_half_day/end_half_day
             
         Returns:
             Created HolidayRequest
@@ -278,8 +282,17 @@ class IntranetClient:
         payload = {
             "start": start,
             "end": end,
-            "half_day": half_day,
         }
+        
+        # Support both new dual half-day and legacy single half_day
+        if start_half_day:
+            payload["start_half_day"] = start_half_day
+        if end_half_day:
+            payload["end_half_day"] = end_half_day
+        if half_day and not start_half_day:
+            # Legacy support - map to start_half_day
+            payload["start_half_day"] = half_day
+        
         if note:
             payload["note"] = note
         
