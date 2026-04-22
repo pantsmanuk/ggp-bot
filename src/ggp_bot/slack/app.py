@@ -8,6 +8,7 @@ from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
 from ggp_bot.config import settings
 from ggp_bot.slack.handlers.commands import handle_ggp_command
+from ggp_bot.slack.lunch_timer import lunch_timer_manager
 
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,11 @@ async def start_app(shutdown_event: asyncio.Event | None = None) -> None:
         app=app,
         app_token=settings.slack_app_token
     )
+    
+    # Start the lunch timer background task
+    # Use app.client which is available after handler starts
+    logger.info("Starting lunch timer background task...")
+    lunch_timer_manager.start_background_task(app.client)
     
     # Start the handler
     logger.info("Starting Slack Socket Mode handler...")
@@ -80,6 +86,10 @@ async def start_app(shutdown_event: asyncio.Event | None = None) -> None:
 async def shutdown_app() -> None:
     """Shutdown the Slack app gracefully."""
     global _handler
+    
+    # Stop the lunch timer background task
+    logger.info("Stopping lunch timer background task...")
+    lunch_timer_manager.stop_background_task()
     
     if _handler:
         logger.debug("Closing Slack Socket Mode handler...")

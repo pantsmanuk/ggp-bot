@@ -193,6 +193,11 @@ CLOCK_SUBCOMMANDS = {
         "requires_auth": True,
         "params": "",
     },
+    "lunch": {
+        "description": "Start 1-hour lunch break with reminders",
+        "requires_auth": True,
+        "params": "",
+    },
 }
 
 
@@ -343,6 +348,16 @@ async def _handle_help_subcommand(
                     help_text += (
                         "Shows all clock events for the current week, grouped by day."
                     )
+                elif subcmd == "lunch":
+                    help_text += (
+                        "Starts a 1-hour lunch timer with DM reminders.\n\n"
+                        "*Reminders:*\n"
+                        "• 5 minutes left on lunch break\n"
+                        "• 1 minute left on lunch break\n"
+                        "• Lunch break over - please clock in\n\n"
+                        "*Idempotent:* Additional calls while timer is running do nothing.\n"
+                        "*Early return:* Clock in normally to cancel remaining reminders."
+                    )
                 
                 await respond(help_text)
                 return
@@ -380,6 +395,7 @@ async def _handle_help_subcommand(
                 "*Subcommands:*\n"
                 "• in [note] - Clock in (posts to #Attendance)\n"
                 "• out [note] - Clock out (posts to #Attendance)\n"
+                "• lunch - Start 1-hour lunch timer with DM reminders\n"
                 "• today - Show today's time card\n"
                 "• week - Show this week's time card\n"
                 "• (no subcommand) - Show current clock status\n\n"
@@ -387,6 +403,7 @@ async def _handle_help_subcommand(
                 "• /ggp clock in\n"
                 "• /ggp clock in Starting work on Project X\n"
                 "• /ggp clock out Lunch\n"
+                "• /ggp clock lunch\n"
                 "• /ggp clock\n"
                 "• /ggp clock today\n\n"
                 "Run `/ggp help clock <subcommand>` for more details."
@@ -438,6 +455,7 @@ async def _handle_help_subcommand(
             "• /ggp whois @john.doe\n"
             "• /ggp clock in\n"
             "• /ggp clock out Working late\n"
+            "• /ggp clock lunch\n"
             "• /ggp clock today"
         )
     else:
@@ -1601,6 +1619,13 @@ async def _handle_clock_in_out_subcommand(
                 # Update tracking state
                 timeclock_tracker.update_state(slack_user_id, event_type, event_id)
             
+            # If clocking in, cancel any active lunch timer (early return)
+            if event_type == "in":
+                from ggp_bot.slack.lunch_timer import lunch_timer_manager
+                if lunch_timer_manager.has_active_timer(slack_user_id):
+                    lunch_timer_manager.cancel_timer(slack_user_id)
+                    logger.debug(f"Cancelled lunch timer for {slack_user_id} (early return)")
+            
             # Reply to user
             from ggp_bot.slack.formatters import format_clock_confirmation
             confirmation = format_clock_confirmation(event_type, note)
@@ -1726,6 +1751,85 @@ async def _handle_clock_week_subcommand(
         await respond(f":x: Unexpected error: {e}")
 
 
+async def _handle_clock_lunch_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient,
+) -> None:
+    """Handle clock lunch command - starts 1-hour timer with reminders.
+    
+    Idempotent - silently swallows duplicate calls.
+    """
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    # Check for timeclock:write scope
+    from ggp_bot.intranet.token_storage import token_storage
+    user_token = token_storage.get_token(slack_user_id)
+    if user_token and not user_token.has_scope("bot:timeclock:write"):
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Your token doesn't have time clock write permission.\n"
+            "Please run `/ggp connect` again to refresh your permissions."
+        )
+        return
+    
+    # Check if timer already exists (idempotent)
+    from ggp_bot.slack.lunch_timer import lunch_timer_manager
+    if lunch_timer_manager.has_active_timer(slack_user_id):
+        # Silently swallow - timer already running
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # Get user profile for name
+            user = await intranet.get_user_by_slack_id(slack_user_id)
+            
+            # Clock out via API
+            await intranet.clock_event("out", "Lunch break")
+            
+            # Start lunch timer
+            # Get the DM channel ID for sending reminders
+            dm_response = await client.conversations_open(users=[slack_user_id])
+            dm_channel_id = dm_response["channel"]["id"]
+            
+            timer_started = lunch_timer_manager.start_timer(slack_user_id, dm_channel_id)
+            
+            if not timer_started:
+                # Shouldn't happen due to check above, but handle gracefully
+                return
+            
+            # Send immediate DM
+            await client.chat_postMessage(
+                channel=dm_channel_id,
+                text="You started *lunch*."
+            )
+            
+            # Post to #Attendance
+            try:
+                await client.chat_postMessage(
+                    channel="#Attendance",
+                    text=f"{user.name} started *lunch*."
+                )
+            except Exception as e:
+                # Log but don't fail
+                print(f"[ERROR] Failed to post to #Attendance: {e}")
+            
+            # No response to the slash command (idempotent design)
+            # The DM is the acknowledgment
+            
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to start lunch timer: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
 async def _handle_clock_subcommand(
     respond: AsyncRespond,
     slack_user_id: str,
@@ -1753,6 +1857,8 @@ async def _handle_clock_subcommand(
         await _handle_clock_today_subcommand(respond, slack_user_id, client)
     elif subcommand == "week":
         await _handle_clock_week_subcommand(respond, slack_user_id, client)
+    elif subcommand == "lunch":
+        await _handle_clock_lunch_subcommand(respond, slack_user_id, client)
     elif subcommand == "":
         # No subcommand - show current status
         await _handle_clock_status_subcommand(respond, slack_user_id, client)
@@ -1769,6 +1875,7 @@ async def _handle_clock_subcommand(
                 f"*Available clock commands:*\n"
                 f"• /ggp clock in [note] - Clock in\n"
                 f"• /ggp clock out [note] - Clock out\n"
+                f"• /ggp clock lunch - Start 1-hour lunch timer\n"
                 f"• /ggp clock - Show current status\n"
                 f"• /ggp clock today - Today's time card\n"
                 f"• /ggp clock week - This week's time card\n\n"
@@ -1780,6 +1887,7 @@ async def _handle_clock_subcommand(
                 f"*Available clock commands:*\n"
                 f"• /ggp clock in [note] - Clock in\n"
                 f"• /ggp clock out [note] - Clock out\n"
+                f"• /ggp clock lunch - Start 1-hour lunch timer\n"
                 f"• /ggp clock - Show current status\n"
                 f"• /ggp clock today - Today's time card\n"
                 f"• /ggp clock week - This week's time card\n\n"
