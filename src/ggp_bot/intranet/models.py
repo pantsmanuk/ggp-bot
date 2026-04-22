@@ -189,9 +189,19 @@ class TimeClockEvent(BaseModel):
 
 class TimeClockStatus(BaseModel):
     """Current time clock status - from /api/timeclocks/status."""
-    is_clocked_in: bool = Field(alias="clocked_in")
+    # API returns 'clocked_in', model uses 'is_clocked_in' for clarity
+    # Use both alias and validation_alias to support both naming conventions
+    is_clocked_in: bool = Field(
+        alias="clocked_in",
+        validation_alias="clocked_in"
+    )
     last_event: TimeClockEvent | None = None
-    current_duration: float | None = Field(default=None, description="Minutes clocked in if currently clocked in")
+    current_duration: float | None = Field(
+        default=None, 
+        alias="current_duration",
+        validation_alias="duration_minutes",
+        description="Minutes clocked in if currently clocked in"
+    )
     
     @property
     def current_duration_formatted(self) -> str:

@@ -1636,25 +1636,30 @@ async def _handle_clock_status_subcommand(
             # Convert to model for formatting
             from ggp_bot.intranet.models import TimeClockStatus, TimeClockEvent
             
-            is_clocked_in = status_data.get('clocked_in', False)
+            # Transform API response to match model expectations
+            # API uses 'event' field for time, model uses 'time'
             last_event_data = status_data.get('last_event')
-            current_duration = status_data.get('current_duration')
-            
-            last_event = None
             if last_event_data:
-                last_event = TimeClockEvent(
-                    id=last_event_data.get('id', 0),
-                    type=last_event_data.get('type', ''),
-                    time=last_event_data.get('time', ''),
-                    note=last_event_data.get('note'),
-                    duration=last_event_data.get('duration')
-                )
+                # Rename 'event' to 'time' for model compatibility
+                last_event_dict = {
+                    'id': last_event_data.get('id', 0),
+                    'type': last_event_data.get('type', ''),
+                    'time': last_event_data.get('event') or last_event_data.get('time', ''),
+                    'note': last_event_data.get('note'),
+                    'duration': last_event_data.get('duration')
+                }
+                last_event = TimeClockEvent.model_validate(last_event_dict)
+            else:
+                last_event = None
             
-            status = TimeClockStatus(
-                is_clocked_in=is_clocked_in,
-                last_event=last_event,
-                current_duration=current_duration
-            )
+            # Build status data with proper field mapping
+            status_dict = {
+                'clocked_in': status_data.get('clocked_in', False),
+                'last_event': last_event.model_dump() if last_event else None,
+                'duration_minutes': status_data.get('duration_minutes') or status_data.get('current_duration')
+            }
+            
+            status = TimeClockStatus.model_validate(status_dict)
             
             from ggp_bot.slack.formatters import format_timeclock_status_block
             blocks = format_timeclock_status_block(status)
