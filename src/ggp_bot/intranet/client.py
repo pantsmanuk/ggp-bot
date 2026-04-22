@@ -323,7 +323,7 @@ class IntranetClient:
         return HolidayRequest(**data["data"])
     
     async def cancel_holiday(self, holiday_id: int) -> dict[str, Any]:
-        """Cancel a holiday request.
+        """Cancel a single holiday request.
         
         Args:
             holiday_id: ID of the holiday to cancel
@@ -332,6 +332,25 @@ class IntranetClient:
             Cancellation result with days returned
         """
         data = await self._delete(f"/api/holidays/{holiday_id}")
+        return data["data"]
+    
+    async def cancel_holidays_batch(self, ids: str) -> dict[str, Any]:
+        """Cancel multiple holiday requests in batch.
+        
+        Supports individual IDs and ranges:
+        - "123" - Single ID
+        - "123, 125, 127" - Multiple individual IDs
+        - "150-155" - Range of IDs (150, 151, 152, 153, 154, 155)
+        - "150, 152-155, 158" - Combined format
+        
+        Args:
+            ids: Comma-separated list of holiday IDs with optional ranges
+            
+        Returns:
+            Batch cancellation result with summary of cancelled holidays
+        """
+        payload = {"ids": ids}
+        data = await self._post("/api/holidays/cancel-batch", payload)
         return data["data"]
     
     # ==================== User & Directory ====================
