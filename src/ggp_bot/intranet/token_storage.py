@@ -15,6 +15,7 @@ Example:
     >>> print(key.decode())  # Add this to .env as TOKEN_ENCRYPTION_KEY
 """
 
+import logging
 import os
 import sqlite3
 import hashlib
@@ -29,6 +30,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from ggp_bot.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -197,14 +200,14 @@ class TokenStorage:
         Returns:
             UserToken with decrypted values, or None if not found/expired
         """
-        print(f"[DEBUG] get_token: Looking for user {slack_user_id} in {self.db_path}")
+        logger.debug(f"get_token: Looking for user {slack_user_id}")
         
         # Check if DB file exists
         if not self.db_path.exists():
-            print(f"[DEBUG] DB file does not exist: {self.db_path}")
+            logger.debug(f"DB file does not exist: {self.db_path}")
             return None
         
-        print(f"[DEBUG] DB file exists, querying...")
+        logger.debug(f"DB file exists, querying...")
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
@@ -214,17 +217,17 @@ class TokenStorage:
             row = cursor.fetchone()
             
             if not row:
-                print(f"[DEBUG] No row found for user {slack_user_id}")
+                logger.debug(f"No row found for user {slack_user_id}")
                 return None
             
-            print(f"[DEBUG] Found row for user {slack_user_id}, attempting decryption...")
+            logger.debug(f"Found row for user {slack_user_id}, attempting decryption...")
             
             # Decrypt token value
             try:
                 decrypted_token = self._decrypt(row["encrypted_token"])
-                print(f"[DEBUG] Decryption successful")
+                logger.debug(f"Decryption successful")
             except Exception as e:
-                print(f"[DEBUG] Decryption failed: {e}")
+                logger.debug(f"Decryption failed: {e}")
                 # If decryption fails, token is corrupted or key changed
                 return None
             
@@ -267,16 +270,15 @@ class TokenStorage:
         """
         import json
         
-        print(f"[DEBUG] TokenStorage.save_token called for {slack_user_id}")
-        print(f"[DEBUG] DB path: {self.db_path}")
+        logger.debug(f"TokenStorage.save_token called for {slack_user_id}")
         
         created_at = datetime.now().isoformat()
-        print(f"[DEBUG] Encrypting token...")
+        logger.debug(f"Encrypting token...")
         encrypted_token = self._encrypt(token)
-        print(f"[DEBUG] Token encrypted, length: {len(encrypted_token)}")
+        logger.debug(f"Token encrypted, length: {len(encrypted_token)}")
         scopes_json = json.dumps(scopes)
         
-        print(f"[DEBUG] Writing to database...")
+        logger.debug(f"Writing to database...")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
@@ -291,7 +293,7 @@ class TokenStorage:
                 (slack_user_id, encrypted_token, scopes_json, created_at, expires_at)
             )
             conn.commit()
-            print(f"[DEBUG] Database write committed successfully")
+            logger.debug(f"Database write committed successfully")
         
         return UserToken(
             slack_user_id=slack_user_id,
@@ -327,9 +329,9 @@ class TokenStorage:
         Returns:
             True if user has a valid token, False otherwise
         """
-        print(f"[DEBUG] has_token called for {slack_user_id}")
+        logger.debug(f"has_token called for {slack_user_id}")
         result = self.get_token(slack_user_id)
-        print(f"[DEBUG] get_token returned: {result is not None}")
+        logger.debug(f"get_token returned: {result is not None}")
         return result is not None
     
     def get_all_users(self) -> list[str]:

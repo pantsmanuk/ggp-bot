@@ -481,35 +481,35 @@ class IntranetClient:
         data = await self._post("/api/auth/slack-link", payload)
         
         # DEBUG: Print full response structure
-        print(f"[DEBUG] link_slack_account response: {data}")
+        logger.debug(f"link_slack_account response: {data}")
         
         # Extract and store the token if provided
         # API returns token in: response.data.api_token
         response_data = data.get("data", {})
-        print(f"[DEBUG] response_data: {response_data}")
+        logger.debug(f"response_data: {response_data}")
         
         # Look for api_token field as per API team's specification
         api_token = response_data.get("api_token")
-        print(f"[DEBUG] api_token from response_data: {api_token is not None}")
+        logger.debug(f"api_token from response_data: {api_token is not None}")
         
         if api_token and data.get("success", False):
             # Scopes may be in response_data.scopes or we use defaults
             scopes = response_data.get("scopes", [])
             expires_at = response_data.get("expires_at")
             
-            print(f"[DEBUG] Extracted api_token: {api_token[:10]}... if present, scopes: {scopes}")
+            logger.debug(f"Extracted api_token: {api_token[:10]}... if present, scopes: {scopes}")
             
             # Store the token for future use
-            print(f"[DEBUG] Calling token_storage.save_token for {slack_user_id}")
+            logger.debug(f"Calling token_storage.save_token for {slack_user_id}")
             token_storage.save_token(
                 slack_user_id=slack_user_id,
                 token=api_token,
                 scopes=scopes,
                 expires_at=expires_at
             )
-            print(f"[DEBUG] Token saved to storage")
+            logger.debug(f"Token saved to storage")
         else:
-            print(f"[DEBUG] No api_token found in response. success={data.get('success')}, api_token_present={api_token is not None}")
+            logger.debug(f"No api_token found in response. success={data.get('success')}, api_token_present={api_token is not None}")
         
         return {
             "success": data.get("success", False),

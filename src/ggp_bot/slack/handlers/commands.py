@@ -541,7 +541,7 @@ def _check_user_linked(slack_user_id: str) -> bool:
     # DEBUG: Temporary diagnostic logging
     has_token = token_storage.has_token(slack_user_id)
     all_users = token_storage.get_all_users()
-    print(f"[DEBUG] _check_user_linked: user={slack_user_id}, has_token={has_token}, all_users={all_users}")
+    logger.debug(f"_check_user_linked: user={slack_user_id}, has_token={has_token}, all_users={all_users}")
     return has_token
 
 
@@ -791,8 +791,8 @@ async def _handle_whois_subcommand(
     # Parse the @mention from args
     target_user = args.strip()
     
-    print(f"[DEBUG] whois: raw args = '{args}'")
-    print(f"[DEBUG] whois: target_user = '{target_user}'")
+    logger.debug(f"whois: raw args = '{args}'")
+    logger.debug(f"whois: target_user = '{target_user}'")
     
     if not target_user:
         await respond(
@@ -810,12 +810,12 @@ async def _handle_whois_subcommand(
     
     if mention_match:
         target_slack_id = mention_match.group(1)
-        print(f"[DEBUG] whois: extracted slack_id from mention = '{target_slack_id}'")
+        logger.debug(f"whois: extracted slack_id from mention = '{target_slack_id}'")
     
     # Method 2: If no mention found but we have a client, try to resolve by username/display name
     elif client and target_user.startswith('@'):
         username = target_user[1:].strip()  # Remove the @ prefix
-        print(f"[DEBUG] whois: trying to resolve username = '{username}'")
+        logger.debug(f"whois: trying to resolve username = '{username}'")
         
         try:
             # Method 2a: Try to look up user by email using Slack API
@@ -827,19 +827,19 @@ async def _handle_whois_subcommand(
             
             for email in email_variations:
                 try:
-                    print(f"[DEBUG] whois: trying email lookup: {email}")
+                    logger.debug(f"whois: trying email lookup: {email}")
                     slack_user_info = await client.users_lookupByEmail(email=email)
                     if slack_user_info and slack_user_info.get('ok'):
                         target_slack_id = slack_user_info['user']['id']
-                        print(f"[DEBUG] whois: resolved via email lookup = '{target_slack_id}'")
+                        logger.debug(f"whois: resolved via email lookup = '{target_slack_id}'")
                         break
                 except Exception as e:
-                    print(f"[DEBUG] whois: email lookup failed for {email}: {e}")
+                    logger.debug(f"whois: email lookup failed for {email}: {e}")
                     continue
             
             if not target_slack_id:
                 # Method 2b: Try searching by display name/real name in workspace
-                print(f"[DEBUG] whois: trying users_list search")
+                logger.debug(f"whois: trying users_list search")
                 users_list = await client.users_list()
                 if users_list and users_list.get('ok'):
                     search_lower = username.lower()
@@ -852,7 +852,7 @@ async def _handle_whois_subcommand(
                         real_name = (profile.get('real_name', '') or '').lower()
                         name = (profile.get('name', '') or '').lower()  # username
                         
-                        print(f"[DEBUG] whois: checking user - display_name='{display_name}', real_name='{real_name}', name='{name}'")
+                        logger.debug(f"whois: checking user - display_name='{display_name}', real_name='{real_name}', name='{name}'")
                         
                         # Match against various fields (case insensitive, partial matches)
                         if (search_lower in display_name or 
@@ -862,10 +862,10 @@ async def _handle_whois_subcommand(
                             real_name in search_lower or
                             name in search_lower):
                             target_slack_id = user['id']
-                            print(f"[DEBUG] whois: resolved via display name search = '{target_slack_id}' (matched: display='{display_name}', real='{real_name}')")
+                            logger.debug(f"whois: resolved via display name search = '{target_slack_id}' (matched: display='{display_name}', real='{real_name}')")
                             break
         except Exception as e:
-            print(f"[DEBUG] whois: Slack API resolution failed: {e}")
+            logger.debug(f"whois: Slack API resolution failed: {e}")
     
     if not target_slack_id:
         await respond(
@@ -1097,8 +1097,8 @@ async def _handle_holiday_new_subcommand(
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             # DEBUG: Log available scopes
-            print(f"[DEBUG] User {slack_user_id} scopes: {intranet.scopes}")
-            print(f"[DEBUG] Has bot:holiday:write? {intranet.has_scope('bot:holiday:write')}")
+            logger.debug(f"User {slack_user_id} scopes: {intranet.scopes}")
+            logger.debug(f"Has bot:holiday:write? {intranet.has_scope('bot:holiday:write')}")
             
             # Check if user has write permission
             if not intranet.has_scope("bot:holiday:write"):
@@ -1110,7 +1110,7 @@ async def _handle_holiday_new_subcommand(
                 )
                 return
             
-            print(f"[DEBUG] Requesting holiday: {start_date} to {end_date}, start_half={start_half_day}, end_half={end_half_day}")
+            logger.debug(f"Requesting holiday: {start_date} to {end_date}, start_half={start_half_day}, end_half={end_half_day}")
             
             result = await intranet.request_holiday(
                 start=start_date,
@@ -1120,7 +1120,7 @@ async def _handle_holiday_new_subcommand(
                 note=note
             )
             
-            print(f"[DEBUG] API result: id={result.id}, working_days={result.working_days}, start={result.start_date}, end={result.end_date}")
+            logger.debug(f"API result: id={result.id}, working_days={result.working_days}, start={result.start_date}, end={result.end_date}")
             
             # Build response message with better formatting
             if result.start_date == result.end_date:
@@ -1242,7 +1242,7 @@ async def _handle_holiday_cancel_subcommand(
                 # Use batch cancellation endpoint
                 result = await intranet.cancel_holidays_batch(text)
                 
-                print(f"[DEBUG] cancel_holidays_batch result: {result}")
+                logger.debug(f"cancel_holidays_batch result: {result}")
                 
                 # Build response for batch operation
                 # API returns: {'cancelled': [{'id': 160, 'working_days_returned': 0.5}, ...], 'failed': [], 'total_working_days_returned': 1}
@@ -1288,7 +1288,7 @@ async def _handle_holiday_cancel_subcommand(
                 
                 result = await intranet.cancel_holiday(holiday_id)
                 
-                print(f"[DEBUG] cancel_holiday result: {result}")
+                logger.debug(f"cancel_holiday result: {result}")
                 
                 # Build response - API returns working_days_returned
                 days_text = ""
@@ -1599,7 +1599,7 @@ async def _handle_clock_in_out_subcommand(
             result = await intranet.clock_event(event_type, note)
             event_id = result.get('id', 0)
             
-            print(f"[DEBUG] clock_event result: {result}")
+            logger.debug(f"clock_event result: {result}")
             
             # Check if we should notify #Attendance (idempotent)
             from ggp_bot.intranet.state_tracking import timeclock_tracker
@@ -1615,7 +1615,7 @@ async def _handle_clock_in_out_subcommand(
                         channel="#Attendance",
                         text=attendance_msg
                     )
-                    print(f"[DEBUG] Posted to #Attendance: {attendance_msg}")
+                    logger.debug(f"Posted to #Attendance: {attendance_msg}")
                 except Exception as e:
                     # Log error but don't fail the command
                     print(f"[ERROR] Failed to post to #Attendance: {e}")
@@ -1660,7 +1660,7 @@ async def _handle_clock_status_subcommand(
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             status_data = await intranet.get_timeclock_status()
             
-            print(f"[DEBUG] timeclock_status: {status_data}")
+            logger.debug(f"timeclock_status: {status_data}")
             
             # Convert to model for formatting
             # The model aliases handle field name mapping:
@@ -1699,7 +1699,7 @@ async def _handle_clock_today_subcommand(
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             events_data = await intranet.get_timeclock_history("today")
             
-            print(f"[DEBUG] timeclock_today: {len(events_data)} events")
+            logger.debug(f"timeclock_today: {len(events_data)} events")
             
             # Convert to models
             from ggp_bot.intranet.models import TimeClockEvent
@@ -1734,7 +1734,7 @@ async def _handle_clock_week_subcommand(
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             events_data = await intranet.get_timeclock_history("week")
             
-            print(f"[DEBUG] timeclock_week: {len(events_data)} events")
+            logger.debug(f"timeclock_week: {len(events_data)} events")
             
             # Convert to models
             from ggp_bot.intranet.models import TimeClockEvent
