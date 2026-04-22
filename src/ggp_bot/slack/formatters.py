@@ -139,7 +139,7 @@ def format_timeclock_status_block(status: TimeClockStatus) -> list[dict[str, Any
     """
     if status.is_clocked_in:
         status_emoji = "⏰"
-        status_text = f"Currently clocked **in**"
+        status_text = "Currently clocked *in*"
         
         fields = []
         
@@ -155,7 +155,7 @@ def format_timeclock_status_block(status: TimeClockStatus) -> list[dict[str, Any
                 "text": f"*Duration:*\n{status.current_duration_formatted}"
             })
         
-        # Only add note if present
+        # Only add note if present (Slack italic uses _text_)
         if status.last_event and status.last_event.note:
             fields.append({
                 "type": "mrkdwn",
@@ -183,14 +183,14 @@ def format_timeclock_status_block(status: TimeClockStatus) -> list[dict[str, Any
     else:
         # Clocked out
         status_emoji = "⭕"
-        status_text = "Currently clocked **out**"
+        status_text = "Currently clocked *out*"
         
         text = f"{status_emoji} {status_text}"
         
         if status.last_event:
             text += f"\n• Last clock out: {status.last_event.event_time_12h}"
             if status.last_event.note:
-                text += f" _( {status.last_event.note})_"
+                text += f" _{status.last_event.note}_"
         
         return [
             {
@@ -211,13 +211,13 @@ def format_clock_confirmation(event_type: str, note: str | None = None) -> str:
         note: Optional note
         
     Returns:
-        Formatted markdown string
+        Formatted Slack mrkdwn string (using *bold* and _italic_)
     """
-    bold_type = "**in**" if event_type == "in" else "**out**"
+    bold_type = "*in*" if event_type == "in" else "*out*"
     text = f":white_check_mark: You clocked {bold_type}"
     
     if note:
-        text += f" _( {note})_"
+        text += f" _{note}_"
     
     return text
 
@@ -231,12 +231,12 @@ def format_attendance_message(user_name: str, event_type: str, note: str | None 
         note: Optional note
         
     Returns:
-        Formatted markdown string for #Attendance
+        Formatted Slack mrkdwn string for #Attendance (using *bold* and _italic_)
     """
-    bold_type = "**in**" if event_type == "in" else "**out**"
+    bold_type = "*in*" if event_type == "in" else "*out*"
     text = f"{user_name} clocked {bold_type}"
     
     if note:
-        text += f" _( {note})_"
+        text += f" _{note}_"
     
     return text

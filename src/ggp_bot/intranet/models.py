@@ -221,5 +221,5 @@ class TimeClockStatus(BaseModel):
     
     @property
     def state_text(self) -> str:
-        """Human-readable state text with bold formatting for Slack."""
-        return "**in**" if self.is_clocked_in else "**out**"
+        """Human-readable state text with Slack bold formatting (*text*)."""
+        return "*in*" if self.is_clocked_in else "*out*"
