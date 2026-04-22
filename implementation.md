@@ -112,7 +112,7 @@ LOG_LEVEL=INFO
 | 2.4 Pydantic models | `intranet/models.py` | Models for Health, User, Absence |
 | 2.5 Health endpoint | `intranet/endpoints/health.py` | `GET /health` + `GET /rate-limits` |
 | 2.6 Error mapping | `intranet/errors.py` | Specific exceptions per error code |
-| 2.7 Implement `/intranet status` | `slack/handlers/commands.py` | Reports API connectivity + version |
+| 2.7 Implement `/ggp status` | `slack/handlers/commands.py` | Reports API connectivity + version |
 | 2.8 Integration test | `tests/integration/` | Real API call to `/health` passes |
 
 **Error Code Mapping**:
@@ -135,10 +135,10 @@ LOG_LEVEL=INFO
 |------|---------|---------------------|
 | 3.1 Holiday endpoints | `intranet/endpoints/holidays.py` | All 7 holiday endpoints implemented |
 | 3.2 Date parsing utils | `utils/date_helpers.py` | UK format (DD/MM/YYYY) -> ISO |
-| 3.3 `/holiday balance` | `slack/handlers/commands.py` | Shows entitlement summary |
-| 3.4 `/holiday list` | `slack/handlers/commands.py` | Lists user's holidays (Block Kit) |
-| 3.5 `/holiday book` | `slack/handlers/commands.py` | Parses: `/holiday book 01/05/2026 3` |
-| 3.6 `/holiday cancel` | `slack/handlers/commands.py` | Cancels by ID |
+| 3.3 `/ggp holiday balance` | `slack/handlers/commands.py` | Shows entitlement summary |
+| 3.4 `/ggp holiday list` | `slack/handlers/commands.py` | Lists user's holidays (Block Kit) |
+| 3.5 `/ggp holiday new` | `slack/handlers/commands.py` | Parses: `/ggp holiday new 01/05/2026 for 3 days` |
+| 3.6 `/ggp holiday cancel` | `slack/handlers/commands.py` | Cancels by ID |
 | 3.7 Message formatters | `slack/formatters.py` | Rich Block Kit messages for holidays |
 | 3.8 @mention handler | `slack/handlers/mentions.py` | Responds to "@ggp-bot show my holidays" |
 | 3.9 Alias support | `slack/app.py` | Handles both @ggp-bot and @ggpbot |
@@ -147,19 +147,19 @@ LOG_LEVEL=INFO
 **Slash Commands**:
 
 ```
-/holiday balance
+/ggp holiday balance
 -> Shows: Total: 25, Used: 10, Remaining: 15, Pending: 2
 
-/holiday list
+/ggp holiday list
 -> Shows: List of holidays with status (pending/approved)
 
-/holiday book 01/05/2026 3
+/ggp holiday new 01/05/2026 for 3 days
 -> Books 3 days from May 1st 2026
 
-/holiday book 01/05/2026 05/05/2026 "Summer break"
+/ggp holiday new 01/05/2026 to 05/05/2026 "Summer break"
 -> Date range with note
 
-/holiday cancel 123
+/ggp holiday cancel 123
 -> Cancels holiday ID 123
 ```
 
@@ -184,9 +184,9 @@ LOG_LEVEL=INFO
 |------|---------|---------------------|
 | 4.1 User endpoints | `intranet/endpoints/users.py` | GET /users/me, /search, /{id}/status |
 | 4.2 Directory endpoint | `intranet/endpoints/directory.py` | GET /directory |
-| 4.3 `/whois @user` | `slack/handlers/commands.py` | Shows user profile + status |
-| 4.4 `/directory search <query>` | `slack/handlers/commands.py` | Searches by name/email |
-| 4.5 `/status` | `slack/handlers/commands.py` | Shows my status (working/holiday/clocked in) |
+| 4.3 `/ggp whois @user` | `slack/handlers/commands.py` | Shows user profile + status |
+| 4.4 `/ggp directory search <query>` | `slack/handlers/commands.py` | Searches by name/email |
+| 4.5 `/ggp status` | `slack/handlers/commands.py` | Shows my status (working/holiday/clocked in) |
 | 4.6 User formatters | `slack/formatters.py` | Profile cards, directory tables |
 | 4.7 @mention handlers | `slack/handlers/mentions.py` | "who is @user", "find number for X" |
 | 4.8 Integration tests | `tests/integration/` | Real API calls pass |
@@ -201,7 +201,7 @@ Placeholder - will implement based on intranet API roadmap:
 - `POST /timeclock/event` - Clock in/out
 - `GET /timeclock/status` - Current status
 - `GET /timeclock/today` - Today's entries
-- Slash commands: `/clock in`, `/clock out`, `/clock status`
+- Slash commands: `/ggp clock in`, `/ggp clock out`, `/ggp clock status`
 
 ---
 
@@ -246,8 +246,8 @@ cp .env.example .env
 ggp-bot
 
 # 4. Test in Slack
-/ggp-bot ping
-/ggp-bot intranet status
+/ggp ping
+/ggp status
 ```
 
 ---

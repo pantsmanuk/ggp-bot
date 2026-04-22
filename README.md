@@ -1,6 +1,6 @@
 # ggp-bot
 
-**Version:** 0.5.8  
+**Version:** 0.6.0  
 **API Compatibility:** GGP Intranet API v0.99.6  
 
 Slack bot for GGP intranet integration and Jenkins automation.
@@ -9,13 +9,16 @@ Slack bot for GGP intranet integration and Jenkins automation.
 
 ### ✅ Working Commands
 
+All commands now use the consolidated `/ggp` interface:
+
 | Command | Description | Auth Required |
 |---------|-------------|---------------|
-| `/ggp-ping` | Test bot responsiveness | No |
-| `/intranet-status` | Check API health and version | No |
-| `/next-bank-holiday` | Show next UK bank holiday | No |
-| `/connect <email> <password>` | Link Slack to intranet account | Yes (with intranet creds) |
-| `/whoami` | Show your linked intranet profile | Yes (via Slack ID lookup) |
+| `/ggp ping` | Test bot responsiveness | No |
+| `/ggp status` | Check API health and version | No |
+| `/ggp bank-holiday` | Show next UK bank holiday | No |
+| `/ggp connect <email> <password>` | Link Slack to intranet account | No (with intranet creds) |
+| `/ggp whoami` | Show your linked intranet profile | Yes |
+| `/ggp help [command]` | Show help for all commands or specific topic | No |
 
 ### ⏳ Pending API Endpoints
 
@@ -23,10 +26,17 @@ The following commands are implemented in the bot but waiting for API team to co
 
 | Command | Status | API Endpoint Needed |
 |---------|--------|---------------------|
-| `/holiday-entitlement` | Ready | `GET /api/holidays/entitlement` |
-| `/my-holidays` | Ready | `GET /api/holidays/mine` |
-| `/request-holiday` | Ready | `POST /api/holidays/request` |
-| `/cancel-holiday` | Ready | `DELETE /api/holidays/{id}` |
+| `/ggp holiday balance` | Ready | `GET /api/holidays/entitlement` |
+| `/ggp holiday list` | Ready | `GET /api/holidays/mine` |
+| `/ggp holiday new <dates>` | Ready | `POST /api/holidays/request` |
+| `/ggp holiday cancel <id>` | Ready | `DELETE /api/holidays/{id}` |
+
+**Holiday command examples:**
+- `/ggp holiday new 23/04/2026 Vacation` (single day)
+- `/ggp holiday new 23/04/2026 25/04/2026 Family trip` (multi-day)
+- `/ggp holiday new 23/04/2026 AM Doctor` (half day)
+
+Run `/ggp help holiday` for more details on date formats.
 
 ## Development
 
@@ -84,12 +94,12 @@ src/ggp_bot/
 
 Before using user-specific commands, you must link your Slack account:
 
-1. Run `/connect your.email@ggpsystems.co.uk yourpassword`
+1. Run `/ggp connect your.email@ggpsystems.co.uk yourpassword`
    - Passwords with spaces are supported
 2. The bot will link your Slack ID to your intranet account
-3. Now `/whoami` and future holiday commands will work
+3. Now `/ggp whoami` and `/ggp holiday` commands will work
 
-If you get `SLACK_USER_NOT_LINKED` error, run `/connect` first.
+If you get `SLACK_USER_NOT_LINKED` error, run `/ggp connect` first.
 
 ## API Compatibility
 
@@ -108,7 +118,8 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 
 ## Version History
 
-- **0.4.0** - Secure per-user token storage with SQLite + Fernet encryption, two-level authentication (bot + user tokens), improved scope-based error handling
+- **0.6.0** - Consolidated slash commands into single `/ggp` interface with subcommands, added context-aware help and "did you mean?" suggestions
+- **0.5.0** - Secure per-user token storage with SQLite + Fernet encryption, two-level authentication (bot + user tokens), improved scope-based error handling
 - **0.3.3** - API v0.99.6 support: `/users/by-slack-id` endpoint, `SLACK_USER_NOT_LINKED` error handling
 - **0.3.2** - Fix `/connect` command to support passwords with spaces
 - **0.3.1** - Align with API v0.99.5: correct endpoints, models, error handling
@@ -120,7 +131,7 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 
 ### Phase 1 ✅ Complete
 - Slack app with Socket Mode
-- Basic connectivity (`/ggp-ping`)
+- Basic connectivity (`/ggp ping`)
 
 ### Phase 2 ✅ Complete
 - Intranet HTTP client
@@ -128,7 +139,7 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 - Pydantic models
 - Account linking (`/connect`)
 - User identification (`/whoami` via Slack ID)
-- Public endpoints (`/intranet-status`, `/next-bank-holiday`)
+- Public endpoints (`/ggp status`, `/ggp bank-holiday`)
 
 ### Phase 3 ⏳ In Progress (Waiting on API)
 - Holiday entitlement
@@ -144,6 +155,6 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 
 ## Support
 
-For bot issues: Check logs and verify API connectivity with `/intranet-status`
+For bot issues: Check logs and verify API connectivity with `/ggp status`
 
 For API issues: See `API_BOT_DEVELOPER_GUIDE.md` in intranet project

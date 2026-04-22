@@ -91,10 +91,10 @@ def parse_holiday_request(text: str) -> Tuple[str, str, str | None, str | None, 
     """Parse a holiday request command string.
     
     Expected formats:
-    - /request-holiday <start> <end> [note]
-    - /request-holiday <start> AM <end> PM [note]
-    - /request-holiday 23/04/2026 25/04/2026 Vacation
-    - /request-holiday 23/04/2026 AM 25/04/2026 PM Doctor appointment
+    - /ggp holiday new <start> <end> [note]
+    - /ggp holiday new <start> AM <end> PM [note]
+    - /ggp holiday new 23/04/2026 25/04/2026 Vacation
+    - /ggp holiday new 23/04/2026 AM 25/04/2026 PM Doctor appointment
     
     Args:
         text: The command text after the command name
