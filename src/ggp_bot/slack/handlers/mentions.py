@@ -20,6 +20,7 @@ from ggp_bot.slack.handlers.commands import (
     _handle_holiday_balance_subcommand,
     _handle_clock_status_subcommand,
     _handle_whois_subcommand,
+    _handle_bank_holiday_subcommand,
 )
 from ggp_bot.intranet.client import IntranetClient
 from ggp_bot.intranet.errors import (
@@ -48,6 +49,12 @@ INTENT_PATTERNS = {
         r"how\s+many\s+holidays?\s+(?:do\s+I\s+have\s+)?(?:left|remaining)",
         r"what['']?s\s+my\s+holiday\s+(?:balance|entitlement)",
         r"(?:show\s+)?(?:my\s+)?entitlement",
+    ],
+    "bank_holiday": [
+        r"next\s+(?:public\s+)?holiday",
+        r"bank\s+holiday",
+        r"when['']?s\s+the\s+next\s+holiday",
+        r"upcoming\s+holiday",
     ],
     "clock_status": [
         r"am\s+I\s+(?:clocked\s+)?in",
@@ -158,6 +165,26 @@ async def _handle_mention_holiday_balance(
             await respond(text, blocks)
     
     await _handle_holiday_balance_subcommand(MockRespond(), slack_user_id, client)
+
+
+async def _handle_mention_bank_holiday(
+    say: AsyncSay,
+    slack_user_id: str,
+    client: AsyncWebClient,
+) -> None:
+    """Handle bank holiday intent via mention."""
+    # Bank holiday is a public command - no auth required
+    async def respond(text: str | None = None, blocks: list | None = None) -> None:
+        if blocks:
+            await say(blocks=blocks, text=text or "Bank holiday info")
+        else:
+            await say(text=text or "Bank holiday info")
+    
+    class MockRespond:
+        async def __call__(self, text: str | None = None, blocks: list | None = None) -> None:
+            await respond(text, blocks)
+    
+    await _handle_bank_holiday_subcommand(MockRespond(), client)
 
 
 async def _handle_mention_clock_status(
@@ -329,6 +356,8 @@ async def handle_mention(
         await _handle_mention_holiday_list(say, slack_user_id, client)
     elif intent == "holiday_balance":
         await _handle_mention_holiday_balance(say, slack_user_id, client)
+    elif intent == "bank_holiday":
+        await _handle_mention_bank_holiday(say, slack_user_id, client)
     elif intent == "clock_status":
         await _handle_mention_clock_status(say, slack_user_id, client)
     elif intent == "whois":
