@@ -148,9 +148,9 @@ HOLIDAY_SUBCOMMANDS = {
         "params": "<dates> [note]",
     },
     "cancel": {
-        "description": "Cancel a holiday booking",
+        "description": "Cancel holiday booking(s)",
         "requires_auth": True,
-        "params": "<id>",
+        "params": "<id(s)>",
     },
 }
 
@@ -210,7 +210,14 @@ async def _handle_help_subcommand(
                         "*Half-day markers:* AM or PM after a date"
                     )
                 elif subcmd == "cancel":
-                    help_text += "Use `/ggp holiday list` to find holiday IDs."
+                    help_text += (
+                        "*Examples:*\n"
+                        "• /ggp holiday cancel 123 (single holiday)\n"
+                        "• /ggp holiday cancel 123, 125, 127 (multiple)\n"
+                        "• /ggp holiday cancel 150-155 (range)\n"
+                        "• /ggp holiday cancel 150, 152-155, 158 (mixed)\n\n"
+                        "Use `/ggp holiday list` to find holiday IDs."
+                    )
                 
                 await respond(help_text)
                 return
@@ -263,7 +270,9 @@ async def _handle_help_subcommand(
         lines.append(
             "\n*Examples:*\n"
             "• /ggp holiday new 23/04/2026 Vacation\n"
-            "• /ggp holiday new 23/04/2026 AM Doctor"
+            "• /ggp holiday new 23/04/2026 AM Doctor\n"
+            "• /ggp holiday cancel 123\n"
+            "• /ggp holiday cancel 150-155"
         )
     else:
         lines.append(
@@ -812,8 +821,11 @@ async def _handle_holiday_cancel_subcommand(
 ) -> None:
     """Handle the holiday cancel subcommand (was /cancel-holiday).
     
-    Usage: /ggp holiday cancel <holiday-id>
-    Cancels a pending holiday request by its ID.
+    Supports single ID, multiple IDs, or ranges:
+    - /ggp holiday cancel 123 (single)
+    - /ggp holiday cancel 123, 125, 127 (multiple)
+    - /ggp holiday cancel 150-155 (range)
+    - /ggp holiday cancel 150, 152-155, 158 (mixed)
     """
     if not _check_user_linked(slack_user_id):
         await _handle_not_linked(respond)
@@ -824,22 +836,30 @@ async def _handle_holiday_cancel_subcommand(
     
     if not text:
         await respond(
-            ":warning: *Usage:* `/ggp holiday cancel <holiday-id>`\n"
-            "Example: `/ggp holiday cancel 123`\n\n"
+            ":warning: *Usage:* `/ggp holiday cancel <ids>`\n"
+            "*Single:* `/ggp holiday cancel 123`\n"
+            "*Multiple:* `/ggp holiday cancel 123, 125, 127`\n"
+            "*Range:* `/ggp holiday cancel 150-155`\n"
+            "*Mixed:* `/ggp holiday cancel 150, 152-155, 158`\n\n"
             "Use `/ggp holiday list` to see your holiday IDs."
         )
         return
     
-    # Parse holiday ID
-    try:
-        holiday_id = int(text.split()[0])
-    except ValueError:
+    # Validate the ID format (allow: numbers, commas, hyphens, spaces)
+    import re
+    if not re.match(r'^[\d\s,\-]+$', text):
         await respond(
-            ":warning: *Invalid holiday ID*\n"
-            "Please provide a valid number.\n"
-            "Example: `/ggp holiday cancel 123`"
+            ":warning: *Invalid holiday ID format*\n"
+            "Please provide valid holiday IDs.\n"
+            "Examples:\n"
+            "• `/ggp holiday cancel 123`\n"
+            "• `/ggp holiday cancel 123, 125, 127`\n"
+            "• `/ggp holiday cancel 150-155`"
         )
         return
+    
+    # Determine if this is a batch cancellation (contains comma or hyphen)
+    is_batch = ',' in text or '-' in text
     
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
@@ -852,28 +872,71 @@ async def _handle_holiday_cancel_subcommand(
                 )
                 return
             
-            result = await intranet.cancel_holiday(holiday_id)
-            
-            print(f"[DEBUG] cancel_holiday result: {result}")
-            
-            # Build response - API returns working_days_returned
-            days_text = ""
-            if 'working_days_returned' in result:
-                days_text = f"\n• Days returned: {result['working_days_returned']}"
-            elif 'days_returned' in result:
-                days_text = f"\n• Days returned: {result['days_returned']}"
-            
-            await respond(
-                f":white_check_mark: *Holiday Cancelled*\n"
-                f"• Request ID: #{holiday_id}\n"
-                f"• Status: {result.get('status', 'Cancelled')}"
-                f"{days_text}"
-            )
+            if is_batch:
+                # Use batch cancellation endpoint
+                result = await intranet.cancel_holidays_batch(text)
+                
+                print(f"[DEBUG] cancel_holidays_batch result: {result}")
+                
+                # Build response for batch operation
+                cancelled = result.get('cancelled', [])
+                failed = result.get('failed', [])
+                total_days = result.get('total_days_returned', 0)
+                
+                lines = [f":white_check_mark: *Holidays Cancelled*"]
+                lines.append(f"• Cancelled: {len(cancelled)} request(s)")
+                
+                if cancelled:
+                    id_list = ', '.join(str(i) for i in cancelled[:10])
+                    if len(cancelled) > 10:
+                        id_list += f" and {len(cancelled) - 10} more"
+                    lines.append(f"• IDs: {id_list}")
+                
+                if total_days:
+                    lines.append(f"• Total days returned: {total_days}")
+                
+                if failed:
+                    lines.append(f"\n:warning: *Failed to cancel {len(failed)} request(s):*")
+                    for fail in failed[:5]:
+                        lines.append(f"• #{fail.get('id', '?')}: {fail.get('reason', 'Unknown error')}")
+                    if len(failed) > 5:
+                        lines.append(f"• ... and {len(failed) - 5} more")
+                
+                await respond('\n'.join(lines))
+            else:
+                # Single cancellation - use legacy endpoint
+                try:
+                    holiday_id = int(text.split()[0])
+                except ValueError:
+                    await respond(
+                        ":warning: *Invalid holiday ID*\n"
+                        "Please provide a valid number.\n"
+                        "Example: `/ggp holiday cancel 123`"
+                    )
+                    return
+                
+                result = await intranet.cancel_holiday(holiday_id)
+                
+                print(f"[DEBUG] cancel_holiday result: {result}")
+                
+                # Build response - API returns working_days_returned
+                days_text = ""
+                if 'working_days_returned' in result:
+                    days_text = f"\n• Days returned: {result['working_days_returned']}"
+                elif 'days_returned' in result:
+                    days_text = f"\n• Days returned: {result['days_returned']}"
+                
+                await respond(
+                    f":white_check_mark: *Holiday Cancelled*\n"
+                    f"• Request ID: #{holiday_id}\n"
+                    f"• Status: {result.get('status', 'Cancelled')}"
+                    f"{days_text}"
+                )
             
     except IntranetNotFoundError:
         await respond(
             f":x: *Holiday not found*\n"
-            f"Could not find holiday request #{holiday_id}.\n"
+            f"Could not find one or more holiday requests.\n"
             "Use `/ggp holiday list` to see your current holiday requests."
         )
     except IntranetScopeError:
