@@ -648,6 +648,9 @@ async def _handle_whois_subcommand(
     # Parse the @mention from args
     target_user = args.strip()
     
+    print(f"[DEBUG] whois: raw args = '{args}'")
+    print(f"[DEBUG] whois: target_user = '{target_user}'")
+    
     if not target_user:
         await respond(
             ":warning: *Usage:* `/ggp whois <@user>`\n"
@@ -656,20 +659,29 @@ async def _handle_whois_subcommand(
         )
         return
     
-    # Extract user ID from mention format <@U12345678> or <@U12345678|username>
+    # Extract user ID from mention format <@U12345678> or <@U12345678|Display Name>
+    # Slack can send: <@U12345678>, <@U12345678|username>, or <@U12345678|Display Name>
     import re
-    mention_match = re.match(r'<@([A-Z0-9]+)(?:\|[^>]+)?>', target_user)
+    
+    # Find all mentions in the text (in case there's extra text after)
+    mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', target_user)
+    
+    print(f"[DEBUG] whois: mention_match = {mention_match}")
     
     if not mention_match:
         await respond(
             ":warning: *Invalid user format*\n"
+            f"Received: `{target_user}`\n\n"
             "Please use @mention to specify the user.\n"
             "Example: `/ggp whois @john.doe`\n\n"
-            "Tip: Type @ and select the user from Slack's autocomplete."
+            "Tip: Type @ and select the user from Slack's autocomplete.\n\n"
+            "Note: For users with spaces in their names, make sure to select "
+            "them from the autocomplete dropdown before typing anything else."
         )
         return
     
     target_slack_id = mention_match.group(1)
+    print(f"[DEBUG] whois: extracted slack_id = '{target_slack_id}'")
     
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
