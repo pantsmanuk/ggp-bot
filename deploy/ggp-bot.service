@@ -1,0 +1,39 @@
+[Unit]
+Description=GGP Bot - Slack bot for GGP intranet integration
+Documentation=https://github.com/pantsmanuk/ggp-bot
+After=network.target
+
+[Service]
+Type=simple
+User=ggp-bot
+Group=ggp-bot
+WorkingDirectory=/var/www/ggp-bot
+
+# Load environment variables from .env file
+EnvironmentFile=/var/www/ggp-bot/.env
+
+# Run the bot
+ExecStart=/var/www/ggp-bot/.venv/bin/ggp-bot
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Graceful shutdown - give 30 seconds for cleanup
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ggp-bot /var/log
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ggp-bot
+
+[Install]
+WantedBy=multi-user.target
