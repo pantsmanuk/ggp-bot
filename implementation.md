@@ -226,7 +226,7 @@ LOG_LEVEL=INFO
 
 ---
 
-### Sprint 6: Production Readiness ⏳ v1.0.0
+### Sprint 6: Production Readiness ✅ Complete (v1.0.0)
 
 **Goal**: systemd service, graceful shutdown, comprehensive error handling
 
@@ -234,7 +234,7 @@ LOG_LEVEL=INFO
 |------|---------|--------|
 | 6.1 Signal handling | `main.py` | ✅ SIGTERM graceful shutdown |
 | 6.2 Graceful shutdown | `slack/app.py` | ✅ Lunch timer cleanup on exit |
-| 6.3 systemd service | `deploy/ggp-bot.service` | ⏳ Ubuntu 24.04 service unit |
+| 6.3 systemd service | `deploy/ggp-bot.service` | ✅ Ubuntu 24.04 service unit |
 | 6.4 Deployment docs | `DEPLOY.md` | ⏳ Step-by-step setup guide |
 | 6.5 Integration tests | `tests/integration/` | ⏳ Holiday + clock tests |
 
@@ -242,13 +242,23 @@ LOG_LEVEL=INFO
 
 ## Release Roadmap
 
-### v1.0.0 (Current Sprint)
-**Status**: Feature complete, production readiness in progress
+### v1.0.0 ✅ DEPLOYED TO PRODUCTION
+**Status**: Feature complete and running in production
 
-**Remaining tasks**:
-1. @mention natural language handlers (Sprint 4b)
-2. systemd service unit + deployment docs (Sprint 6)
-3. Integration test coverage
+**Features delivered**:
+- ✅ Consolidated slash commands (`/ggp` interface)
+- ✅ Holiday management (balance, list, book, cancel)
+- ✅ User directory search (`/ggp whois`, `/ggp directory`)
+- ✅ Time clock integration with #Attendance posting
+- ✅ Lunch timer with background reminders
+- ✅ Natural language @mention handlers
+- ✅ systemd service for production deployment
+- ✅ Configurable file logging
+- ✅ Secure per-user token storage
+
+**Optional remaining**:
+- ⏳ DEPLOY.md documentation (operational notes)
+- ⏳ Expanded integration tests
 
 ### v1.1.0 (Future)
 **Focus**: Jenkins CI/CD integration (Sprint 7)

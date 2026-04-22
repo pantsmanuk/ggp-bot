@@ -1,9 +1,10 @@
 # ggp-bot
 
-**Version:** 0.7.0  
+**Version:** 1.0.0  
 **API Compatibility:** GGP Intranet API v0.99.6  
+**Status:** ✅ Running in production
 
-Slack bot for GGP intranet integration and Jenkins automation.
+Slack bot for GGP intranet integration. Currently handles holidays, time clock, and user directory. Jenkins integration planned for v1.1.0.
 
 ## Current Status
 
