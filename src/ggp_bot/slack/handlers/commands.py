@@ -193,6 +193,11 @@ CLOCK_SUBCOMMANDS = {
         "requires_auth": True,
         "params": "",
     },
+    "lunch": {
+        "description": "Start 1-hour lunch break with reminders",
+        "requires_auth": True,
+        "params": "",
+    },
 }
 
 
