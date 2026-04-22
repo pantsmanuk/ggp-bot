@@ -675,36 +675,54 @@ async def _handle_whois_subcommand(
         print(f"[DEBUG] whois: trying to resolve username = '{username}'")
         
         try:
-            # Try to look up user by username using Slack API
-            slack_user_info = await client.users_lookupByEmail(email=f"{username}@ggpsystems.co.uk")
-            if slack_user_info and slack_user_info.get('ok'):
-                target_slack_id = slack_user_info['user']['id']
-                print(f"[DEBUG] whois: resolved via email lookup = '{target_slack_id}'")
-        except Exception as e:
-            print(f"[DEBUG] whois: email lookup failed: {e}")
-            # Fall through to try other methods
-        
-        if not target_slack_id:
-            # Try searching by display name in workspace
-            try:
-                # Get list of users and find matching display name
+            # Method 2a: Try to look up user by email using Slack API
+            # Common email patterns: firstname.lastname, firstname@company, etc.
+            email_variations = [
+                f"{username}@ggpsystems.co.uk",
+                f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",  # Handle spaces vs dots
+            ]
+            
+            for email in email_variations:
+                try:
+                    print(f"[DEBUG] whois: trying email lookup: {email}")
+                    slack_user_info = await client.users_lookupByEmail(email=email)
+                    if slack_user_info and slack_user_info.get('ok'):
+                        target_slack_id = slack_user_info['user']['id']
+                        print(f"[DEBUG] whois: resolved via email lookup = '{target_slack_id}'")
+                        break
+                except Exception as e:
+                    print(f"[DEBUG] whois: email lookup failed for {email}: {e}")
+                    continue
+            
+            if not target_slack_id:
+                # Method 2b: Try searching by display name/real name in workspace
+                print(f"[DEBUG] whois: trying users_list search")
                 users_list = await client.users_list()
                 if users_list and users_list.get('ok'):
+                    search_lower = username.lower()
                     for user in users_list.get('members', []):
+                        if user.get('is_bot') or user.get('deleted'):
+                            continue
+                            
                         profile = user.get('profile', {})
-                        display_name = profile.get('display_name', '') or profile.get('real_name', '')
-                        real_name = profile.get('real_name', '')
+                        display_name = (profile.get('display_name', '') or '').lower()
+                        real_name = (profile.get('real_name', '') or '').lower()
+                        name = (profile.get('name', '') or '').lower()  # username
                         
-                        # Match against display name or real name (case insensitive)
-                        if (username.lower() in display_name.lower() or 
-                            username.lower() in real_name.lower() or
-                            display_name.lower() in username.lower() or
-                            real_name.lower() in username.lower()):
+                        print(f"[DEBUG] whois: checking user - display_name='{display_name}', real_name='{real_name}', name='{name}'")
+                        
+                        # Match against various fields (case insensitive, partial matches)
+                        if (search_lower in display_name or 
+                            search_lower in real_name or
+                            search_lower in name or
+                            display_name in search_lower or
+                            real_name in search_lower or
+                            name in search_lower):
                             target_slack_id = user['id']
-                            print(f"[DEBUG] whois: resolved via display name search = '{target_slack_id}' (matched: {display_name or real_name})")
+                            print(f"[DEBUG] whois: resolved via display name search = '{target_slack_id}' (matched: display='{display_name}', real='{real_name}')")
                             break
-            except Exception as e:
-                print(f"[DEBUG] whois: users_list search failed: {e}")
+        except Exception as e:
+            print(f"[DEBUG] whois: Slack API resolution failed: {e}")
     
     if not target_slack_id:
         await respond(
