@@ -237,6 +237,6 @@ def format_attendance_message(user_name: str, event_type: str, note: str | None 
     text = f"{user_name} clocked {bold_type}"
     
     if note:
-        text += f" _{note}_"
+        text += f" _({note})_"
     
     return text
