@@ -1,6 +1,6 @@
 # ggp-bot
 
-**Version:** 0.6.0  
+**Version:** 0.7.0  
 **API Compatibility:** GGP Intranet API v0.99.6  
 
 Slack bot for GGP intranet integration and Jenkins automation.
@@ -23,6 +23,16 @@ All commands now use the consolidated `/ggp` interface:
 | `/ggp holiday list` | List your holiday bookings | Yes |
 | `/ggp holiday new <dates>` | Request time off | Yes |
 | `/ggp holiday cancel <id(s)>` | Cancel holiday(s) - supports single, multiple, or ranges | Yes |
+| `/ggp whoami` | Show your linked intranet profile | Yes |
+| `/ggp whois @<user>` | Show a user's profile and status | Yes |
+| `/ggp directory search <query>` | Search directory by name/email/dept | Yes |
+| `/ggp directory list` | List all users in directory | Yes |
+| `/ggp clock in [note]` | Clock in (posts to #Attendance) | Yes |
+| `/ggp clock out [note]` | Clock out (posts to #Attendance) | Yes |
+| `/ggp clock lunch` | Start 1-hour lunch timer with DM reminders | Yes |
+| `/ggp clock today` | Show today's time card | Yes |
+| `/ggp clock week` | Show this week's time card | Yes |
+| `/ggp clock` | Show current clock status | Yes |
 
 **Holiday command examples:**
 - `/ggp holiday new 23/04/2026 Vacation` (single day)
@@ -143,9 +153,11 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 - Book holidays (`/ggp holiday new`)
 - Cancel holidays with batch support (`/ggp holiday cancel`)
 
-### Phase 4 ⏳ Planned
-- User directory search
-- Time clock integration
+### Phase 4 ✅ Complete
+- User directory search (`/ggp directory search`, `/ggp directory list`)
+- User profile lookup (`/ggp whois @user`)
+- Time clock integration with #Attendance posting
+- Lunch timer with background reminders
 
 ### Phase 5 ⏳ Future
 - Jenkins CI/CD integration

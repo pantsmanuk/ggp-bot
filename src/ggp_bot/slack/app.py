@@ -8,6 +8,7 @@ from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
 from ggp_bot.config import settings
 from ggp_bot.slack.handlers.commands import handle_ggp_command
+from ggp_bot.slack.handlers.mentions import handle_mention
 from ggp_bot.slack.lunch_timer import lunch_timer_manager
 
 
@@ -21,6 +22,9 @@ app = AsyncApp(
 
 # Register the consolidated slash command handler
 app.command("/ggp")(handle_ggp_command)
+
+# Register @mention handler
+app.event("app_mention")(handle_mention)
 
 # Global handler reference for shutdown
 _handler: AsyncSocketModeHandler | None = None

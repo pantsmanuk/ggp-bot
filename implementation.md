@@ -176,47 +176,82 @@ LOG_LEVEL=INFO
 
 ---
 
-### Sprint 4: User Directory & Status
+### Sprint 4: User Directory & Status ✅ Complete (v1.0.0)
 
 **Goal**: Directory lookups and user status queries
 
-| Task | File(s) | Acceptance Criteria |
-|------|---------|---------------------|
-| 4.1 User endpoints | `intranet/endpoints/users.py` | GET /users/me, /search, /{id}/status |
-| 4.2 Directory endpoint | `intranet/endpoints/directory.py` | GET /directory |
-| 4.3 `/ggp whois @user` | `slack/handlers/commands.py` | Shows user profile + status |
-| 4.4 `/ggp directory search <query>` | `slack/handlers/commands.py` | Searches by name/email |
-| 4.5 `/ggp status` | `slack/handlers/commands.py` | Shows my status (working/holiday/clocked in) |
-| 4.6 User formatters | `slack/formatters.py` | Profile cards, directory tables |
-| 4.7 @mention handlers | `slack/handlers/mentions.py` | "who is @user", "find number for X" |
-| 4.8 Integration tests | `tests/integration/` | Real API calls pass |
+| Task | File(s) | Status |
+|------|---------|--------|
+| 4.1 User endpoints | `intranet/client.py` | ✅ GET /users/by-slack-id/{id} |
+| 4.2 Directory endpoint | `intranet/client.py` | ✅ GET /users/search |
+| 4.3 `/ggp whois @user` | `slack/handlers/commands.py` | ✅ Shows profile + status |
+| 4.4 `/ggp directory search <query>` | `slack/handlers/commands.py` | ✅ Searches by name/email/dept |
+| 4.5 `/ggp directory list` | `slack/handlers/commands.py` | ✅ Lists all users |
+| 4.6 User formatters | `slack/formatters.py` | ✅ Profile display |
+| 4.7 @mention handlers | `slack/handlers/mentions.py` | ⏳ v1.0.0 - Natural language processing |
+
+### Sprint 4b: Natural Language @mentions ⏳ v1.0.0
+
+**Goal**: Conversational interactions via @mentions
+
+| Task | File(s) | Status |
+|------|---------|--------|
+| 4b.1 Intent parsing | `slack/handlers/mentions.py` | ⏳ Pattern matching for intents |
+| 4b.2 Holiday queries | `slack/handlers/mentions.py` | ⏳ "@ggp-bot show my holidays" |
+| 4b.3 Directory queries | `slack/handlers/mentions.py` | ⏳ "@ggp-bot who is @user" |
+| 4b.4 Clock queries | `slack/handlers/mentions.py` | ⏳ "@ggp-bot am I clocked in?" |
+| 4b.5 Help/fallback | `slack/handlers/mentions.py` | ⏳ Unknown intent handling |
 
 ---
 
-### Sprint 5: Time Clock (Pending API)
+### Sprint 5: Time Clock ✅ Complete (v1.0.0)
 
-**Goal**: Time clock operations when Phase 2 API is available
+**Goal**: Time clock operations with #Attendance integration
 
-Placeholder - will implement based on intranet API roadmap:
-- `POST /timeclock/event` - Clock in/out
-- `GET /timeclock/status` - Current status
-- `GET /timeclock/today` - Today's entries
-- Slash commands: `/ggp clock in`, `/ggp clock out`, `/ggp clock status`
+| Task | File(s) | Status |
+|------|---------|--------|
+| 5.1 Time clock endpoints | `intranet/client.py` | ✅ POST /timeclock/event, GET /timeclock/status |
+| 5.2 Clock in/out | `slack/handlers/commands.py` | ✅ `/ggp clock in`, `/ggp clock out` with notes |
+| 5.3 Status & history | `slack/handlers/commands.py` | ✅ `/ggp clock`, `/ggp clock today`, `/ggp clock week` |
+| 5.4 #Attendance posting | `slack/handlers/commands.py` | ✅ Posts on state change only |
+| 5.5 Lunch timer | `slack/lunch_timer.py` | ✅ 1-hour timer with DM reminders at 55/59/60 min |
+| 5.6 State tracking | `intranet/state_tracking.py` | ✅ Prevents duplicate #Attendance posts |
+
+### Sprint 6: Jenkins CI/CD ⏳ v1.1.0
+
+**Goal**: Jenkins integration for build/deployment operations
+
+**Status**: Deferred until bot is stable in production
+**Rationale**: Want production use and stability before adding Jenkins automation
 
 ---
 
-### Sprint 6: Production Readiness
+### Sprint 6: Production Readiness ⏳ v1.0.0
 
 **Goal**: systemd service, graceful shutdown, comprehensive error handling
 
-| Task | File(s) | Acceptance Criteria |
-|------|---------|---------------------|
-| 6.1 Signal handling | `main.py` | SIGTERM graceful shutdown |
-| 6.2 systemd service | `deploy/ggp-bot.service` | Ubuntu 24.04 service unit |
-| 6.3 Request logging | `intranet/client.py` | All API calls logged with timing |
-| 6.4 Error messages | `slack/formatters.py` | Specific, helpful error messages |
-| 6.5 Deployment docs | `DEPLOY.md` | Step-by-step Ubuntu 24.04 setup |
-| 6.6 Final integration tests | `tests/integration/` | 90%+ pass rate against real API |
+| Task | File(s) | Status |
+|------|---------|--------|
+| 6.1 Signal handling | `main.py` | ✅ SIGTERM graceful shutdown |
+| 6.2 Graceful shutdown | `slack/app.py` | ✅ Lunch timer cleanup on exit |
+| 6.3 systemd service | `deploy/ggp-bot.service` | ⏳ Ubuntu 24.04 service unit |
+| 6.4 Deployment docs | `DEPLOY.md` | ⏳ Step-by-step setup guide |
+| 6.5 Integration tests | `tests/integration/` | ⏳ Holiday + clock tests |
+
+---
+
+## Release Roadmap
+
+### v1.0.0 (Current Sprint)
+**Status**: Feature complete, production readiness in progress
+
+**Remaining tasks**:
+1. @mention natural language handlers (Sprint 4b)
+2. systemd service unit + deployment docs (Sprint 6)
+3. Integration test coverage
+
+### v1.1.0 (Future)
+**Focus**: Jenkins CI/CD integration (Sprint 7)
 
 ---
 
