@@ -172,6 +172,29 @@ DIRECTORY_SUBCOMMANDS = {
     },
 }
 
+CLOCK_SUBCOMMANDS = {
+    "in": {
+        "description": "Clock in",
+        "requires_auth": True,
+        "params": "[note]",
+    },
+    "out": {
+        "description": "Clock out",
+        "requires_auth": True,
+        "params": "[note]",
+    },
+    "today": {
+        "description": "Show today's time card",
+        "requires_auth": True,
+        "params": "",
+    },
+    "week": {
+        "description": "Show this week's time card",
+        "requires_auth": True,
+        "params": "",
+    },
+}
+
 
 def _get_all_command_names() -> list[str]:
     """Get list of all valid command names for suggestion matching."""
@@ -182,6 +205,9 @@ def _get_all_command_names() -> list[str]:
     # Add directory subcommands as 'directory <subcmd>'
     for subcmd in DIRECTORY_SUBCOMMANDS.keys():
         names.append(f"directory {subcmd}")
+    # Add clock subcommands as 'clock <subcmd>'
+    for subcmd in CLOCK_SUBCOMMANDS.keys():
+        names.append(f"clock {subcmd}")
     return names
 
 
@@ -1411,6 +1437,277 @@ async def _handle_directory_subcommand(
 
 
 # ============================================================================
+# Clock Subcommand Handlers
+# ============================================================================
+
+async def _handle_clock_in_out_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    event_type: str,
+    args: str,
+    client: AsyncWebClient,
+) -> None:
+    """Handle clock in/out with #Attendance posting.
+    
+    Args:
+        respond: Slack respond function
+        slack_user_id: The Slack user ID
+        event_type: "in" or "out"
+        args: Optional note
+        client: Slack WebClient for #Attendance posting
+    """
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    # Check for timeclock:write scope
+    from ggp_bot.intranet.token_storage import token_storage
+    user_token = token_storage.get_token(slack_user_id)
+    if user_token and not user_token.has_scope("bot:timeclock:write"):
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Your token doesn't have time clock write permission.\n"
+            "Please run `/ggp connect` again to refresh your permissions."
+        )
+        return
+    
+    note = args.strip() if args else None
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # Get user profile for name
+            user = await intranet.get_user_by_slack_id(slack_user_id)
+            
+            # Perform clock event
+            result = await intranet.clock_event(event_type, note)
+            event_id = result.get('id', 0)
+            
+            print(f"[DEBUG] clock_event result: {result}")
+            
+            # Check if we should notify #Attendance (idempotent)
+            from ggp_bot.intranet.state_tracking import timeclock_tracker
+            should_post = timeclock_tracker.should_notify(slack_user_id, event_type)
+            
+            if should_post:
+                # Post to #Attendance channel
+                from ggp_bot.slack.formatters import format_attendance_message
+                attendance_msg = format_attendance_message(user.name, event_type, note)
+                
+                try:
+                    await client.chat_postMessage(
+                        channel="#Attendance",
+                        text=attendance_msg
+                    )
+                    print(f"[DEBUG] Posted to #Attendance: {attendance_msg}")
+                except Exception as e:
+                    # Log error but don't fail the command
+                    print(f"[ERROR] Failed to post to #Attendance: {e}")
+                
+                # Update tracking state
+                timeclock_tracker.update_state(slack_user_id, event_type, event_id)
+            
+            # Reply to user
+            from ggp_bot.slack.formatters import format_clock_confirmation
+            confirmation = format_clock_confirmation(event_type, note)
+            await respond(confirmation)
+            
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to clock {event_type}: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_clock_status_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle clock status command (shows current clocked in/out state)."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            status_data = await intranet.get_timeclock_status()
+            
+            print(f"[DEBUG] timeclock_status: {status_data}")
+            
+            # Convert to model for formatting
+            from ggp_bot.intranet.models import TimeClockStatus, TimeClockEvent
+            
+            is_clocked_in = status_data.get('clocked_in', False)
+            last_event_data = status_data.get('last_event')
+            current_duration = status_data.get('current_duration')
+            
+            last_event = None
+            if last_event_data:
+                last_event = TimeClockEvent(
+                    id=last_event_data.get('id', 0),
+                    type=last_event_data.get('type', ''),
+                    time=last_event_data.get('time', ''),
+                    note=last_event_data.get('note'),
+                    duration=last_event_data.get('duration')
+                )
+            
+            status = TimeClockStatus(
+                is_clocked_in=is_clocked_in,
+                last_event=last_event,
+                current_duration=current_duration
+            )
+            
+            from ggp_bot.slack.formatters import format_timeclock_status_block
+            blocks = format_timeclock_status_block(status)
+            await respond(blocks=blocks)
+            
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to get clock status: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_clock_today_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle clock today command (shows today's time card)."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            events_data = await intranet.get_timeclock_history("today")
+            
+            print(f"[DEBUG] timeclock_today: {len(events_data)} events")
+            
+            # Convert to models
+            from ggp_bot.intranet.models import TimeClockEvent
+            events = [TimeClockEvent(**e) for e in events_data]
+            
+            from ggp_bot.slack.formatters import format_timecard_block
+            blocks = format_timecard_block("Time Card - Today", events)
+            await respond(blocks=blocks)
+            
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to get today's time card: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_clock_week_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle clock week command (shows this week's time card)."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            events_data = await intranet.get_timeclock_history("week")
+            
+            print(f"[DEBUG] timeclock_week: {len(events_data)} events")
+            
+            # Convert to models
+            from ggp_bot.intranet.models import TimeClockEvent
+            events = [TimeClockEvent(**e) for e in events_data]
+            
+            from ggp_bot.slack.formatters import format_timecard_block
+            blocks = format_timecard_block("Time Card - This Week", events)
+            await respond(blocks=blocks)
+            
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to get week's time card: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_clock_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient,
+) -> None:
+    """Dispatch clock subcommands to their handlers.
+    
+    Args:
+        respond: Slack respond function
+        slack_user_id: The Slack user ID
+        args: Subcommand and arguments (e.g., "in Working late")
+        client: Slack WebClient for #Attendance posting
+    """
+    # Parse the clock subcommand
+    parts = args.strip().split(None, 1)
+    subcommand = parts[0].lower() if parts else ""
+    sub_args = parts[1] if len(parts) > 1 else ""
+    
+    if subcommand == "in":
+        await _handle_clock_in_out_subcommand(respond, slack_user_id, "in", sub_args, client)
+    elif subcommand == "out":
+        await _handle_clock_in_out_subcommand(respond, slack_user_id, "out", sub_args, client)
+    elif subcommand == "today":
+        await _handle_clock_today_subcommand(respond, slack_user_id, client)
+    elif subcommand == "week":
+        await _handle_clock_week_subcommand(respond, slack_user_id, client)
+    elif subcommand == "":
+        # No subcommand - show current status
+        await _handle_clock_status_subcommand(respond, slack_user_id, client)
+    else:
+        # Unknown clock subcommand - suggest valid ones
+        valid_subcommands = list(CLOCK_SUBCOMMANDS.keys())
+        suggestion = _suggest_command(subcommand, [f"clock {cmd}" for cmd in valid_subcommands])
+        
+        if suggestion:
+            suggestion_clean = suggestion.replace("clock ", "")
+            await respond(
+                f":warning: Unknown clock command '{subcommand}'.\n"
+                f"Did you mean: `clock {suggestion_clean}`?\n\n"
+                f"*Available clock commands:*\n"
+                f"• /ggp clock in [note] - Clock in\n"
+                f"• /ggp clock out [note] - Clock out\n"
+                f"• /ggp clock - Show current status\n"
+                f"• /ggp clock today - Today's time card\n"
+                f"• /ggp clock week - This week's time card\n\n"
+                f"Run `/ggp help clock` for more details."
+            )
+        else:
+            await respond(
+                f":warning: Unknown clock command '{subcommand}'.\n\n"
+                f"*Available clock commands:*\n"
+                f"• /ggp clock in [note] - Clock in\n"
+                f"• /ggp clock out [note] - Clock out\n"
+                f"• /ggp clock - Show current status\n"
+                f"• /ggp clock today - Today's time card\n"
+                f"• /ggp clock week - This week's time card\n\n"
+                f"Run `/ggp help clock` for more details."
+            )
+
+
+# ============================================================================
 # Main Command Router
 # ============================================================================
 
@@ -1458,6 +1755,8 @@ async def handle_ggp_command(
         await _handle_holiday_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "directory":
         await _handle_directory_subcommand(respond, slack_user_id, args, client)
+    elif subcommand == "clock":
+        await _handle_clock_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "help":
         await _handle_help_subcommand(respond, slack_user_id, args)
     else:
