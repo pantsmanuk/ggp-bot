@@ -879,17 +879,20 @@ async def _handle_holiday_cancel_subcommand(
                 print(f"[DEBUG] cancel_holidays_batch result: {result}")
                 
                 # Build response for batch operation
+                # API returns: {'cancelled': [{'id': 160, 'working_days_returned': 0.5}, ...], 'failed': [], 'total_working_days_returned': 1}
                 cancelled = result.get('cancelled', [])
                 failed = result.get('failed', [])
-                total_days = result.get('total_days_returned', 0)
+                total_days = result.get('total_working_days_returned', 0)
                 
                 lines = [f":white_check_mark: *Holidays Cancelled*"]
                 lines.append(f"• Cancelled: {len(cancelled)} request(s)")
                 
                 if cancelled:
-                    id_list = ', '.join(str(i) for i in cancelled[:10])
-                    if len(cancelled) > 10:
-                        id_list += f" and {len(cancelled) - 10} more"
+                    # cancelled is now a list of dicts with 'id' and 'working_days_returned'
+                    cancelled_ids = [str(c.get('id', '?')) for c in cancelled]
+                    id_list = ', '.join(cancelled_ids[:10])
+                    if len(cancelled_ids) > 10:
+                        id_list += f" and {len(cancelled_ids) - 10} more"
                     lines.append(f"• IDs: {id_list}")
                 
                 if total_days:
@@ -898,7 +901,9 @@ async def _handle_holiday_cancel_subcommand(
                 if failed:
                     lines.append(f"\n:warning: *Failed to cancel {len(failed)} request(s):*")
                     for fail in failed[:5]:
-                        lines.append(f"• #{fail.get('id', '?')}: {fail.get('reason', 'Unknown error')}")
+                        fail_id = fail.get('id', '?') if isinstance(fail, dict) else fail
+                        fail_reason = fail.get('reason', 'Unknown error') if isinstance(fail, dict) else 'Unknown error'
+                        lines.append(f"• #{fail_id}: {fail_reason}")
                     if len(failed) > 5:
                         lines.append(f"• ... and {len(failed) - 5} more")
                 
