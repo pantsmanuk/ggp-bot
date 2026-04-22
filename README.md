@@ -19,24 +19,20 @@ All commands now use the consolidated `/ggp` interface:
 | `/ggp connect <email> <password>` | Link Slack to intranet account | No (with intranet creds) |
 | `/ggp whoami` | Show your linked intranet profile | Yes |
 | `/ggp help [command]` | Show help for all commands or specific topic | No |
-
-### ⏳ Pending API Endpoints
-
-The following commands are implemented in the bot but waiting for API team to complete endpoints:
-
-| Command | Status | API Endpoint Needed |
-|---------|--------|---------------------|
-| `/ggp holiday balance` | Ready | `GET /api/holidays/entitlement` |
-| `/ggp holiday list` | Ready | `GET /api/holidays/mine` |
-| `/ggp holiday new <dates>` | Ready | `POST /api/holidays/request` |
-| `/ggp holiday cancel <id>` | Ready | `DELETE /api/holidays/{id}` |
+| `/ggp holiday balance` | View holiday entitlement | Yes |
+| `/ggp holiday list` | List your holiday bookings | Yes |
+| `/ggp holiday new <dates>` | Request time off | Yes |
+| `/ggp holiday cancel <id(s)>` | Cancel holiday(s) - supports single, multiple, or ranges | Yes |
 
 **Holiday command examples:**
 - `/ggp holiday new 23/04/2026 Vacation` (single day)
 - `/ggp holiday new 23/04/2026 25/04/2026 Family trip` (multi-day)
 - `/ggp holiday new 23/04/2026 AM Doctor` (half day)
+- `/ggp holiday cancel 123` (single cancellation)
+- `/ggp holiday cancel 150-155` (range cancellation)
+- `/ggp holiday cancel 150, 152-155, 158` (mixed cancellation)
 
-Run `/ggp help holiday` for more details on date formats.
+Run `/ggp help holiday` for more details on date formats and cancellation syntax.
 
 ## Development
 
