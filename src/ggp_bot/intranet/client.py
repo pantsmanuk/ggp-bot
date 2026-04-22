@@ -43,6 +43,9 @@ class IntranetClient:
     API_VERSION = "v0.99.5"
     BOT_VERSION = "0.4.0"
     
+    # Track active client instances for graceful shutdown
+    _active_clients: set["IntranetClient"] = set()
+    
     def __init__(self, base_url: str, token: str | None = None):
         """Initialize the intranet client.
         
@@ -476,12 +479,37 @@ class IntranetClient:
     
     async def close(self) -> None:
         """Close the HTTP client connection."""
+        # Remove from active clients tracking
+        IntranetClient._active_clients.discard(self)
         await self.client.aclose()
     
     async def __aenter__(self) -> "IntranetClient":
         """Async context manager entry."""
+        # Track this client instance
+        IntranetClient._active_clients.add(self)
+        logger.debug(f"IntranetClient entered context. Active clients: {len(IntranetClient._active_clients)}")
         return self
     
     async def __aexit__(self, *_) -> None:
         """Async context manager exit."""
         await self.close()
+        logger.debug(f"IntranetClient exited context. Active clients: {len(IntranetClient._active_clients)}")
+    
+    @classmethod
+    async def close_all(cls) -> None:
+        """Close all active IntranetClient connections.
+        
+        Used during graceful shutdown to ensure all HTTP connections are closed.
+        """
+        if cls._active_clients:
+            logger.debug(f"Closing {len(cls._active_clients)} active IntranetClient connection(s)...")
+            # Create a copy of the set since close() modifies it
+            clients_to_close = list(cls._active_clients)
+            for client in clients_to_close:
+                try:
+                    await client.close()
+                except Exception as e:
+                    logger.warning(f"Error closing IntranetClient: {e}")
+            logger.debug("All IntranetClient connections closed")
+        else:
+            logger.debug("No active IntranetClient connections to close")
