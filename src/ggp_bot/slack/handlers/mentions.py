@@ -224,6 +224,12 @@ async def _handle_mention_help(
     
     help_text = (
         "*Hi! I'm GGP Bot. Here's what I can help you with:*\n\n"
+        "*Privacy Note:* When you @mention me, my responses are visible to everyone in this channel. "
+        "For private queries (like holiday balances or personal info), use slash commands instead "
+        "(e.g., `/ggp holiday balance`) — only you will see the response.\n\n"
+    )
+    
+    help_text += (
         "*Holiday commands:*\n"
         "• Show my holidays\n"
         "• What's my holiday balance?\n"
@@ -243,7 +249,7 @@ async def _handle_mention_help(
     help_text += (
         "*Slash commands:*\n"
         "Use `/ggp help` for a full list of slash commands.\n\n"
-        "*Tip:* You can also use slash commands like `/ggp holiday list` or `/ggp clock in`"
+        "*Tip:* Use slash commands like `/ggp holiday list` or `/ggp clock in` for private responses."
     )
     
     if not is_connected:
@@ -282,7 +288,11 @@ async def _handle_mention_unknown(
             "• What's my holiday balance? (after connecting)\n\n"
         )
     
-    response += "Or run `/ggp help` for all available commands."
+    response += (
+        "Or run `/ggp help` for all available commands.\n\n"
+        "_:lock: *Privacy tip:* Use slash commands (like `/ggp holiday balance`) for private responses. "
+        "@mentions are visible to everyone in the channel._"
+    )
     
     await say(response)
 
