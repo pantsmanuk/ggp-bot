@@ -659,29 +659,85 @@ async def _handle_whois_subcommand(
         )
         return
     
-    # Extract user ID from mention format <@U12345678> or <@U12345678|Display Name>
-    # Slack can send: <@U12345678>, <@U12345678|username>, or <@U12345678|Display Name>
-    import re
+    target_slack_id = None
     
-    # Find all mentions in the text (in case there's extra text after)
+    # Method 1: Try to extract from mention format <@U12345678> or <@U12345678|Display Name>
+    import re
     mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', target_user)
     
-    print(f"[DEBUG] whois: mention_match = {mention_match}")
+    if mention_match:
+        target_slack_id = mention_match.group(1)
+        print(f"[DEBUG] whois: extracted slack_id from mention = '{target_slack_id}'")
     
-    if not mention_match:
+    # Method 2: If no mention found but we have a client, try to resolve by username/display name
+    elif client and target_user.startswith('@'):
+        username = target_user[1:].strip()  # Remove the @ prefix
+        print(f"[DEBUG] whois: trying to resolve username = '{username}'")
+        
+        try:
+            # Method 2a: Try to look up user by email using Slack API
+            # Common email patterns: firstname.lastname, firstname@company, etc.
+            email_variations = [
+                f"{username}@ggpsystems.co.uk",
+                f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",  # Handle spaces vs dots
+            ]
+            
+            for email in email_variations:
+                try:
+                    print(f"[DEBUG] whois: trying email lookup: {email}")
+                    slack_user_info = await client.users_lookupByEmail(email=email)
+                    if slack_user_info and slack_user_info.get('ok'):
+                        target_slack_id = slack_user_info['user']['id']
+                        print(f"[DEBUG] whois: resolved via email lookup = '{target_slack_id}'")
+                        break
+                except Exception as e:
+                    print(f"[DEBUG] whois: email lookup failed for {email}: {e}")
+                    continue
+            
+            if not target_slack_id:
+                # Method 2b: Try searching by display name/real name in workspace
+                print(f"[DEBUG] whois: trying users_list search")
+                users_list = await client.users_list()
+                if users_list and users_list.get('ok'):
+                    search_lower = username.lower()
+                    for user in users_list.get('members', []):
+                        if user.get('is_bot') or user.get('deleted'):
+                            continue
+                            
+                        profile = user.get('profile', {})
+                        display_name = (profile.get('display_name', '') or '').lower()
+                        real_name = (profile.get('real_name', '') or '').lower()
+                        name = (profile.get('name', '') or '').lower()  # username
+                        
+                        print(f"[DEBUG] whois: checking user - display_name='{display_name}', real_name='{real_name}', name='{name}'")
+                        
+                        # Match against various fields (case insensitive, partial matches)
+                        if (search_lower in display_name or 
+                            search_lower in real_name or
+                            search_lower in name or
+                            display_name in search_lower or
+                            real_name in search_lower or
+                            name in search_lower):
+                            target_slack_id = user['id']
+                            print(f"[DEBUG] whois: resolved via display name search = '{target_slack_id}' (matched: display='{display_name}', real='{real_name}')")
+                            break
+        except Exception as e:
+            print(f"[DEBUG] whois: Slack API resolution failed: {e}")
+    
+    if not target_slack_id:
         await respond(
-            ":warning: *Invalid user format*\n"
+            ":warning: *Could not identify user*\n"
             f"Received: `{target_user}`\n\n"
             "Please use @mention to specify the user.\n"
             "Example: `/ggp whois @john.doe`\n\n"
-            "Tip: Type @ and select the user from Slack's autocomplete.\n\n"
-            "Note: For users with spaces in their names, make sure to select "
-            "them from the autocomplete dropdown before typing anything else."
+            "**Important:** Make sure to:\n"
+            "1. Type @ and wait for Slack's autocomplete dropdown\n"
+            "2. Select the user from the dropdown (don't just type the name)\n"
+            "3. This ensures the user is properly linked\n\n"
+            "Alternatively, you can search by name:\n"
+            "• `/ggp directory search elliott` - then use the exact name from results"
         )
         return
-    
-    target_slack_id = mention_match.group(1)
-    print(f"[DEBUG] whois: extracted slack_id = '{target_slack_id}'")
     
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
