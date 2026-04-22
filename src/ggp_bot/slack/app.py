@@ -96,13 +96,22 @@ async def shutdown_app() -> None:
     lunch_timer_manager.stop_background_task()
     
     if _handler:
-        logger.debug("Closing Slack Socket Mode handler...")
+        logger.debug("Stopping Slack Socket Mode handler...")
         try:
-            await _handler.close()
-            logger.debug("Slack handler closed successfully")
+            # Use stop_async() to properly close the handler
+            await _handler.stop_async()
+            logger.debug("Slack handler stopped successfully")
         except Exception as e:
-            logger.warning(f"Error closing Slack handler: {e}")
+            logger.warning(f"Error stopping Slack handler: {e}")
         finally:
             _handler = None
     else:
-        logger.debug("No Slack handler to close")
+        logger.debug("No Slack handler to stop")
+    
+    # Close the Slack client session to prevent aiohttp warnings
+    try:
+        logger.debug("Closing Slack client session...")
+        await app.client.close()
+        logger.debug("Slack client session closed")
+    except Exception as e:
+        logger.debug(f"Slack client session already closed or error: {e}")
