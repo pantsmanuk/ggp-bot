@@ -1634,32 +1634,12 @@ async def _handle_clock_status_subcommand(
             print(f"[DEBUG] timeclock_status: {status_data}")
             
             # Convert to model for formatting
-            from ggp_bot.intranet.models import TimeClockStatus, TimeClockEvent
-            
-            # Transform API response to match model expectations
-            # API uses 'event' field for time, model uses 'time'
-            last_event_data = status_data.get('last_event')
-            if last_event_data:
-                # Rename 'event' to 'time' for model compatibility
-                last_event_dict = {
-                    'id': last_event_data.get('id', 0),
-                    'type': last_event_data.get('type', ''),
-                    'time': last_event_data.get('event') or last_event_data.get('time', ''),
-                    'note': last_event_data.get('note'),
-                    'duration': last_event_data.get('duration')
-                }
-                last_event = TimeClockEvent.model_validate(last_event_dict)
-            else:
-                last_event = None
-            
-            # Build status data with proper field mapping
-            status_dict = {
-                'clocked_in': status_data.get('clocked_in', False),
-                'last_event': last_event.model_dump() if last_event else None,
-                'duration_minutes': status_data.get('duration_minutes') or status_data.get('current_duration')
-            }
-            
-            status = TimeClockStatus.model_validate(status_dict)
+            # The model aliases handle field name mapping:
+            # API 'clocked_in' -> model 'is_clocked_in'
+            # API 'event' -> model 'time'
+            # API 'duration_minutes' -> model 'current_duration'
+            from ggp_bot.intranet.models import TimeClockStatus
+            status = TimeClockStatus.model_validate(status_data)
             
             from ggp_bot.slack.formatters import format_timeclock_status_block
             blocks = format_timeclock_status_block(status)

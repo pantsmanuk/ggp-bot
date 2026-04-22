@@ -162,7 +162,12 @@ class TimeClockEvent(BaseModel):
     """Time clock event - from /api/timeclocks endpoints."""
     id: int
     type: str = Field(description="'in' or 'out'")
-    time: str = Field(description="ISO 8601 datetime string")
+    # API returns 'event', model uses 'time' for clarity
+    time: str = Field(
+        alias="event",
+        validation_alias="event",
+        description="ISO 8601 datetime string"
+    )
     note: str | None = None
     duration: float | None = Field(default=None, description="Duration in minutes for 'out' events")
     
