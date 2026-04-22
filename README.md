@@ -137,10 +137,11 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 - User identification (`/whoami` via Slack ID)
 - Public endpoints (`/ggp status`, `/ggp bank-holiday`)
 
-### Phase 3 ⏳ In Progress (Waiting on API)
-- Holiday entitlement
-- List holidays
-- Book/cancel holidays
+### Phase 3 ✅ Complete
+- Holiday entitlement (`/ggp holiday balance`)
+- List holidays (`/ggp holiday list`)
+- Book holidays (`/ggp holiday new`)
+- Cancel holidays with batch support (`/ggp holiday cancel`)
 
 ### Phase 4 ⏳ Planned
 - User directory search
