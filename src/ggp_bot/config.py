@@ -30,6 +30,20 @@ class Settings(BaseSettings):
         description="Bearer token for authenticated intranet API calls"
     )
     
+    # Logging configuration
+    log_level: str = Field(
+        default="INFO",
+        description="Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL"
+    )
+    log_file: str | None = Field(
+        default=None,
+        description="Path to log file (optional - logs to console only if not set)"
+    )
+    data_dir: str = Field(
+        default="data",
+        description="Directory for data storage (SQLite, logs, etc.)"
+    )
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -3,18 +3,14 @@
 import asyncio
 import logging
 import signal
-import sys
 
+from ggp_bot.logging_config import setup_logging
 from ggp_bot.slack.app import start_app, shutdown_app
 from ggp_bot.intranet.client import IntranetClient
 
 
-# Configure basic logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    stream=sys.stdout
-)
+# Configure logging from environment settings
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Global shutdown event for coordinating graceful shutdown
