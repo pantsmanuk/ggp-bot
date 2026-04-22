@@ -8,10 +8,14 @@ Public endpoints (health check, public holidays) use the bot token, while
 user-specific endpoints (holiday requests, profile) use the user's personal token.
 """
 
+import logging
+
 from slack_bolt.async_app import AsyncAck, AsyncRespond
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ggp_bot.config import settings
+
+logger = logging.getLogger(__name__)
 from ggp_bot.intranet.client import IntranetClient
 from ggp_bot.intranet.errors import (
     IntranetError,
@@ -1800,11 +1804,8 @@ async def _handle_clock_lunch_subcommand(
                 # Shouldn't happen due to check above, but handle gracefully
                 return
             
-            # Send immediate DM
-            await client.chat_postMessage(
-                channel=dm_channel_id,
-                text="You started *lunch*."
-            )
+            # Send confirmation via respond (same as other clock commands)
+            await respond("You started *lunch*.")
             
             # Post to #Attendance
             try:
@@ -1815,9 +1816,6 @@ async def _handle_clock_lunch_subcommand(
             except Exception as e:
                 # Log but don't fail
                 print(f"[ERROR] Failed to post to #Attendance: {e}")
-            
-            # No response to the slash command (idempotent design)
-            # The DM is the acknowledgment
             
     except IntranetAuthError:
         await respond(
