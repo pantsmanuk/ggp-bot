@@ -21,6 +21,8 @@ from ggp_bot.slack.handlers.commands import (
     _handle_clock_status_subcommand,
     _handle_whois_subcommand,
     _handle_bank_holiday_subcommand,
+    _handle_directory_search_subcommand,
+    _handle_whoami_subcommand,
 )
 from ggp_bot.intranet.client import IntranetClient
 from ggp_bot.intranet.errors import (
@@ -67,6 +69,17 @@ INTENT_PATTERNS = {
         r"who\s+(?:is|are)\s+<@(\w+)>",
         r"who['']?s\s+<@(\w+)>",
         r"tell\s+me\s+about\s+<@(\w+)>",
+    ],
+    "whoami": [
+        r"who\s+am\s+I",
+        r"show\s+(?:my\s+)?profile",
+        r"my\s+profile",
+    ],
+    "directory_search": [
+        r"find\s+(.+)",
+        r"search\s+(?:for\s+)?(.+)",
+        r"lookup\s+(.+)",
+        r"who\s+works\s+in\s+(.+)",
     ],
     "help": [
         r"help",
@@ -242,6 +255,59 @@ async def _handle_mention_whois(
     await _handle_whois_subcommand(MockRespond(), slack_user_id, mention_text, client)
 
 
+async def _handle_mention_whoami(
+    say: AsyncSay,
+    slack_user_id: str,
+    client: AsyncWebClient,
+) -> None:
+    """Handle whoami intent via mention."""
+    if not _check_user_linked(slack_user_id):
+        await say(
+            ":x: Your Slack account is not linked. "
+            "Run `/ggp connect <email> <password>` to link your account."
+        )
+        return
+    
+    async def respond(text: str | None = None, blocks: list | None = None) -> None:
+        if blocks:
+            await say(blocks=blocks, text=text or "Your profile")
+        else:
+            await say(text=text or "Your profile")
+    
+    class MockRespond:
+        async def __call__(self, text: str | None = None, blocks: list | None = None) -> None:
+            await respond(text, blocks)
+    
+    await _handle_whoami_subcommand(MockRespond(), slack_user_id, client)
+
+
+async def _handle_mention_directory_search(
+    say: AsyncSay,
+    slack_user_id: str,
+    query: str,
+    client: AsyncWebClient,
+) -> None:
+    """Handle directory search intent via mention."""
+    if not _check_user_linked(slack_user_id):
+        await say(
+            ":x: Your Slack account is not linked. "
+            "Run `/ggp connect <email> <password>` to link your account."
+        )
+        return
+    
+    async def respond(text: str | None = None, blocks: list | None = None) -> None:
+        if blocks:
+            await say(blocks=blocks, text=text or "Directory search")
+        else:
+            await say(text=text or "Directory search")
+    
+    class MockRespond:
+        async def __call__(self, text: str | None = None, blocks: list | None = None) -> None:
+            await respond(text, blocks)
+    
+    await _handle_directory_search_subcommand(MockRespond(), slack_user_id, query, client)
+
+
 async def _handle_mention_help(
     say: AsyncSay,
     slack_user_id: str,
@@ -252,32 +318,28 @@ async def _handle_mention_help(
     help_text = (
         "*Hi! I'm GGP Bot. Here's what I can help you with:*\n\n"
         "*Privacy Note:* When you @mention me, my responses are visible to everyone in this channel. "
-        "For private queries (like holiday balances or personal info), use slash commands instead "
-        "(e.g., `/ggp holiday balance`) — only you will see the response.\n\n"
+        "For private queries (sensitive info), use slash commands — only you will see the response.\n\n"
     )
     
     help_text += (
-        "*Holiday commands:*\n"
+        "*Available via @mention (public):*\n"
         "• Show my holidays\n"
         "• What's my holiday balance?\n"
-        "• Holiday list\n\n"
+        "• Am I clocked in?\n"
+        "• Who is @user?\n"
+        "• Find John / Search engineering\n"
+        "• Next public holiday\n\n"
     )
     
     if is_connected:
         help_text += (
-            "*Time clock commands:*\n"
-            "• Am I clocked in?\n"
-            "• Show my status\n"
-            "• Clock status\n\n"
-            "*Directory commands:*\n"
-            "• Who is @user?\n\n"
+            "*Slash-only for privacy:*\n"
+            "• `/ggp holiday new` - Book time off (private)\n"
+            "• `/ggp holiday cancel` - Cancel holidays (private)\n"
+            "• `/ggp clock in/out/lunch` - Clock actions (private)\n"
+            "• `/ggp clock today/week` - Detailed timecards (private)\n"
+            "• `/ggp whoami` - Your full profile (private)\n\n"
         )
-    
-    help_text += (
-        "*Slash commands:*\n"
-        "Use `/ggp help` for a full list of slash commands.\n\n"
-        "*Tip:* Use slash commands like `/ggp holiday list` or `/ggp clock in` for private responses."
-    )
     
     if not is_connected:
         help_text += (
@@ -368,6 +430,17 @@ async def handle_mention(
             await say(
                 ":warning: Please mention a user to look up.\n"
                 "Example: @ggp-bot who is @john.doe"
+            )
+    elif intent == "whoami":
+        await _handle_mention_whoami(say, slack_user_id, client)
+    elif intent == "directory_search":
+        query = params.get("query", "").strip()
+        if query:
+            await _handle_mention_directory_search(say, slack_user_id, query, client)
+        else:
+            await say(
+                ":warning: Please provide a search term.\n"
+                "Example: @ggp-bot find John"
             )
     elif intent == "help":
         await _handle_mention_help(say, slack_user_id)
