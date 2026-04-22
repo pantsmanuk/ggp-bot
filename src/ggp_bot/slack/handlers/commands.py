@@ -281,6 +281,72 @@ async def _handle_help_subcommand(
                 await respond(help_text)
                 return
         
+        # Check for directory subcommand help
+        if topic_lower.startswith("directory "):
+            subcmd = topic_lower.split(" ", 1)[1]
+            if subcmd in DIRECTORY_SUBCOMMANDS:
+                meta = DIRECTORY_SUBCOMMANDS[subcmd]
+                params = f" {meta['params']}" if meta['params'] else ""
+                
+                help_text = (
+                    f"*/ggp directory {subcmd}{params}*\n"
+                    f"{meta['description']}\n\n"
+                )
+                
+                if subcmd == "search":
+                    help_text += (
+                        "*Examples:*\n"
+                        "• /ggp directory search john (search by name)\n"
+                        "• /ggp directory search engineering (search by department)\n"
+                        "• /ggp directory search john@company.com (search by email)"
+                    )
+                elif subcmd == "list":
+                    help_text += (
+                        "Shows all users in the company directory with their departments.\n\n"
+                        "Use `/ggp directory search <name>` to find specific users."
+                    )
+                
+                await respond(help_text)
+                return
+        
+        # Check for clock subcommand help
+        if topic_lower.startswith("clock "):
+            subcmd = topic_lower.split(" ", 1)[1]
+            if subcmd in CLOCK_SUBCOMMANDS:
+                meta = CLOCK_SUBCOMMANDS[subcmd]
+                params = f" {meta['params']}" if meta['params'] else ""
+                
+                help_text = (
+                    f"*/ggp clock {subcmd}{params}*\n"
+                    f"{meta['description']}\n\n"
+                )
+                
+                if subcmd == "in":
+                    help_text += (
+                        "*Examples:*\n"
+                        "• /ggp clock in\n"
+                        "• /ggp clock in Working on project X\n\n"
+                        "Posts to #Attendance channel (only on state change)."
+                    )
+                elif subcmd == "out":
+                    help_text += (
+                        "*Examples:*\n"
+                        "• /ggp clock out\n"
+                        "• /ggp clock out Lunch break\n\n"
+                        "Posts to #Attendance channel (only on state change)."
+                    )
+                elif subcmd == "today":
+                    help_text += (
+                        "Shows all clock events for today with in/out times and durations."
+                    )
+                elif subcmd == "week":
+                    help_text += (
+                        "Shows all clock events for the current week, grouped by day."
+                    )
+                
+                await respond(help_text)
+                return
+        
         # Check for top-level command help
         all_commands = {**PUBLIC_COMMANDS, **AUTH_COMMANDS}
         if topic_lower in all_commands:
@@ -303,6 +369,28 @@ async def _handle_help_subcommand(
                     "Shows the user's profile, department, phone number, and current status."
                 )
             
+            await respond(help_text)
+            return
+        
+        # Check for clock as a top-level help topic
+        if topic_lower == "clock":
+            help_text = (
+                "*/ggp clock [subcommand]*\n"
+                "Time clock management for tracking work hours.\n\n"
+                "*Subcommands:*\n"
+                "• in [note] - Clock in (posts to #Attendance)\n"
+                "• out [note] - Clock out (posts to #Attendance)\n"
+                "• today - Show today's time card\n"
+                "• week - Show this week's time card\n"
+                "• (no subcommand) - Show current clock status\n\n"
+                "*Examples:*\n"
+                "• /ggp clock in\n"
+                "• /ggp clock in Starting work on Project X\n"
+                "• /ggp clock out Lunch\n"
+                "• /ggp clock\n"
+                "• /ggp clock today\n\n"
+                "Run `/ggp help clock <subcommand>` for more details."
+            )
             await respond(help_text)
             return
         
@@ -336,6 +424,10 @@ async def _handle_help_subcommand(
         for name, meta in DIRECTORY_SUBCOMMANDS.items():
             lines.append(_format_command_help(f"directory {name}", meta))
         
+        lines.append("\n*Clock commands:*")
+        for name, meta in CLOCK_SUBCOMMANDS.items():
+            lines.append(_format_command_help(f"clock {name}", meta))
+        
         lines.append(
             "\n*Examples:*\n"
             "• /ggp holiday new 23/04/2026 Vacation\n"
@@ -343,12 +435,15 @@ async def _handle_help_subcommand(
             "• /ggp holiday cancel 123\n"
             "• /ggp holiday cancel 150-155\n"
             "• /ggp directory search john\n"
-            "• /ggp whois @john.doe"
+            "• /ggp whois @john.doe\n"
+            "• /ggp clock in\n"
+            "• /ggp clock out Working late\n"
+            "• /ggp clock today"
         )
     else:
         lines.append(
             "\n_Run `/ggp connect <email> <password>` to link your account "
-            "and access holiday, directory, and profile commands._"
+            "and access holiday, directory, clock, and profile commands._"
         )
         lines.append("\n*Available after connecting:*")
         for name, meta in AUTH_COMMANDS.items():
@@ -357,8 +452,8 @@ async def _handle_help_subcommand(
             lines.append(f"• /ggp holiday {name} - {meta['description']}")
         for name, meta in DIRECTORY_SUBCOMMANDS.items():
             lines.append(f"• /ggp directory {name} - {meta['description']}")
-        for name, meta in HOLIDAY_SUBCOMMANDS.items():
-            lines.append(f"• /ggp holiday {name} - {meta['description']}")
+        for name, meta in CLOCK_SUBCOMMANDS.items():
+            lines.append(f"• /ggp clock {name} - {meta['description']}")
     
     await respond("\n".join(lines))
 
