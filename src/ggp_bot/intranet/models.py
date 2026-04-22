@@ -152,3 +152,59 @@ class ApiErrorDetail(BaseModel):
     code: str
     message: str
     details: dict[str, Any] | None = None
+
+
+# ============================================================================
+# Time Clock Models
+# ============================================================================
+
+class TimeClockEvent(BaseModel):
+    """Time clock event - from /api/timeclocks endpoints."""
+    id: int
+    type: str = Field(description="'in' or 'out'")
+    time: str = Field(description="ISO 8601 datetime string")
+    note: str | None = None
+    duration: float | None = Field(default=None, description="Duration in minutes for 'out' events")
+    
+    @property
+    def event_time_12h(self) -> str:
+        """Convert ISO datetime to 12-hour format (e.g., '2:30 PM')."""
+        try:
+            dt = datetime.fromisoformat(self.time.replace('Z', '+00:00'))
+            return dt.strftime("%I:%M %p").lstrip("0")  # Remove leading zero
+        except:
+            return self.time
+    
+    @property
+    def duration_formatted(self) -> str:
+        """Format duration as hours and minutes."""
+        if not self.duration:
+            return ""
+        hours = int(self.duration // 60)
+        mins = int(self.duration % 60)
+        if hours > 0:
+            return f"{hours}h {mins}m"
+        return f"{mins}m"
+
+
+class TimeClockStatus(BaseModel):
+    """Current time clock status - from /api/timeclocks/status."""
+    is_clocked_in: bool = Field(alias="clocked_in")
+    last_event: TimeClockEvent | None = None
+    current_duration: float | None = Field(default=None, description="Minutes clocked in if currently clocked in")
+    
+    @property
+    def current_duration_formatted(self) -> str:
+        """Format current duration as hours and minutes."""
+        if not self.current_duration:
+            return ""
+        hours = int(self.current_duration // 60)
+        mins = int(self.current_duration % 60)
+        if hours > 0:
+            return f"{hours}h {mins}m"
+        return f"{mins}m"
+    
+    @property
+    def state_text(self) -> str:
+        """Human-readable state text with bold formatting for Slack."""
+        return "**in**" if self.is_clocked_in else "**out**"
