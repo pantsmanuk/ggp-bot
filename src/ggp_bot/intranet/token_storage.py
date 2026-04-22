@@ -28,6 +28,8 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+from ggp_bot.config import settings
+
 
 @dataclass
 class UserToken:
@@ -73,7 +75,10 @@ class TokenStorage:
                        machine-specific data.
     """
     
-    DEFAULT_DB_PATH = Path(__file__).parent.parent.parent.parent / "data" / "tokens.db"
+    @property
+    def DEFAULT_DB_PATH(self) -> Path:
+        """Get default database path from settings."""
+        return Path(settings.data_dir) / "tokens.db"
     
     def __init__(
         self,
