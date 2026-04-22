@@ -405,6 +405,46 @@ class IntranetClient:
         users_data = data.get("data", [])
         return [UserSearchResult(**u) for u in users_data]
     
+    # ==================== Time Clock ====================
+    
+    async def clock_event(self, event_type: str, note: str | None = None) -> dict[str, Any]:
+        """Clock in or out.
+        
+        Args:
+            event_type: "in" or "out"
+            note: Optional note for the clock event
+            
+        Returns:
+            The clock event data (new or existing if idempotent)
+        """
+        payload = {"type": event_type}
+        if note:
+            payload["note"] = note
+        
+        data = await self._post("/api/timeclocks/clock", payload)
+        return data["data"]
+    
+    async def get_timeclock_status(self) -> dict[str, Any]:
+        """Get current time clock status.
+        
+        Returns:
+            Current status including clocked_in state and last event
+        """
+        data = await self._get("/api/timeclocks/status")
+        return data["data"]
+    
+    async def get_timeclock_history(self, period: str = "today") -> list[dict[str, Any]]:
+        """Get time clock history.
+        
+        Args:
+            period: "today" (default) or "week"
+            
+        Returns:
+            List of clock events for the period
+        """
+        data = await self._get(f"/api/timeclocks/mine?period={period}")
+        return data.get("data", [])
+    
     # ==================== Slack Account Linking ====================
     
     async def link_slack_account(
