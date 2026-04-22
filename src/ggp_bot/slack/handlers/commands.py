@@ -659,29 +659,67 @@ async def _handle_whois_subcommand(
         )
         return
     
-    # Extract user ID from mention format <@U12345678> or <@U12345678|Display Name>
-    # Slack can send: <@U12345678>, <@U12345678|username>, or <@U12345678|Display Name>
-    import re
+    target_slack_id = None
     
-    # Find all mentions in the text (in case there's extra text after)
+    # Method 1: Try to extract from mention format <@U12345678> or <@U12345678|Display Name>
+    import re
     mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', target_user)
     
-    print(f"[DEBUG] whois: mention_match = {mention_match}")
+    if mention_match:
+        target_slack_id = mention_match.group(1)
+        print(f"[DEBUG] whois: extracted slack_id from mention = '{target_slack_id}'")
     
-    if not mention_match:
+    # Method 2: If no mention found but we have a client, try to resolve by username/display name
+    elif client and target_user.startswith('@'):
+        username = target_user[1:].strip()  # Remove the @ prefix
+        print(f"[DEBUG] whois: trying to resolve username = '{username}'")
+        
+        try:
+            # Try to look up user by username using Slack API
+            slack_user_info = await client.users_lookupByEmail(email=f"{username}@ggpsystems.co.uk")
+            if slack_user_info and slack_user_info.get('ok'):
+                target_slack_id = slack_user_info['user']['id']
+                print(f"[DEBUG] whois: resolved via email lookup = '{target_slack_id}'")
+        except Exception as e:
+            print(f"[DEBUG] whois: email lookup failed: {e}")
+            # Fall through to try other methods
+        
+        if not target_slack_id:
+            # Try searching by display name in workspace
+            try:
+                # Get list of users and find matching display name
+                users_list = await client.users_list()
+                if users_list and users_list.get('ok'):
+                    for user in users_list.get('members', []):
+                        profile = user.get('profile', {})
+                        display_name = profile.get('display_name', '') or profile.get('real_name', '')
+                        real_name = profile.get('real_name', '')
+                        
+                        # Match against display name or real name (case insensitive)
+                        if (username.lower() in display_name.lower() or 
+                            username.lower() in real_name.lower() or
+                            display_name.lower() in username.lower() or
+                            real_name.lower() in username.lower()):
+                            target_slack_id = user['id']
+                            print(f"[DEBUG] whois: resolved via display name search = '{target_slack_id}' (matched: {display_name or real_name})")
+                            break
+            except Exception as e:
+                print(f"[DEBUG] whois: users_list search failed: {e}")
+    
+    if not target_slack_id:
         await respond(
-            ":warning: *Invalid user format*\n"
+            ":warning: *Could not identify user*\n"
             f"Received: `{target_user}`\n\n"
             "Please use @mention to specify the user.\n"
             "Example: `/ggp whois @john.doe`\n\n"
-            "Tip: Type @ and select the user from Slack's autocomplete.\n\n"
-            "Note: For users with spaces in their names, make sure to select "
-            "them from the autocomplete dropdown before typing anything else."
+            "**Important:** Make sure to:\n"
+            "1. Type @ and wait for Slack's autocomplete dropdown\n"
+            "2. Select the user from the dropdown (don't just type the name)\n"
+            "3. This ensures the user is properly linked\n\n"
+            "Alternatively, you can search by name:\n"
+            "• `/ggp directory search elliott` - then use the exact name from results"
         )
         return
-    
-    target_slack_id = mention_match.group(1)
-    print(f"[DEBUG] whois: extracted slack_id = '{target_slack_id}'")
     
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
