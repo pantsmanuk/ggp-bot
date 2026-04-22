@@ -129,6 +129,11 @@ AUTH_COMMANDS = {
         "requires_auth": True,
         "params": "",
     },
+    "whois": {
+        "description": "Show a user's profile and status by @mention",
+        "requires_auth": True,
+        "params": "<@user>",
+    },
 }
 
 HOLIDAY_SUBCOMMANDS = {
@@ -154,6 +159,19 @@ HOLIDAY_SUBCOMMANDS = {
     },
 }
 
+DIRECTORY_SUBCOMMANDS = {
+    "search": {
+        "description": "Search directory by name, email, or department",
+        "requires_auth": True,
+        "params": "<query>",
+    },
+    "list": {
+        "description": "List all users in directory",
+        "requires_auth": True,
+        "params": "",
+    },
+}
+
 
 def _get_all_command_names() -> list[str]:
     """Get list of all valid command names for suggestion matching."""
@@ -161,6 +179,9 @@ def _get_all_command_names() -> list[str]:
     # Add holiday subcommands as 'holiday <subcmd>'
     for subcmd in HOLIDAY_SUBCOMMANDS.keys():
         names.append(f"holiday {subcmd}")
+    # Add directory subcommands as 'directory <subcmd>'
+    for subcmd in DIRECTORY_SUBCOMMANDS.keys():
+        names.append(f"directory {subcmd}")
     return names
 
 
@@ -218,6 +239,18 @@ async def _handle_help_subcommand(
                         "• /ggp holiday cancel 150, 152-155, 158 (mixed)\n\n"
                         "Use `/ggp holiday list` to find holiday IDs."
                     )
+                elif subcmd == "search":
+                    help_text += (
+                        "*Examples:*\n"
+                        "• /ggp directory search john (search by name)\n"
+                        "• /ggp directory search engineering (search by department)\n"
+                        "• /ggp directory search john@company.com (search by email)"
+                    )
+                elif subcmd == "list":
+                    help_text += (
+                        "Shows all users in the company directory.\n\n"
+                        "Use `/ggp whois @user` to see detailed profile and status."
+                    )
                 
                 await respond(help_text)
                 return
@@ -236,6 +269,12 @@ async def _handle_help_subcommand(
                     "• /ggp connect john.doe@ggpsystems.co.uk mypassword\n\n"
                     "This links your Slack account to your intranet profile, "
                     "allowing you to use personalized commands."
+                )
+            elif topic_lower == "whois":
+                help_text += (
+                    "\n\n*Example:*\n"
+                    "• /ggp whois @john.doe\n\n"
+                    "Shows the user's profile, department, phone number, and current status."
                 )
             
             await respond(help_text)
@@ -267,21 +306,31 @@ async def _handle_help_subcommand(
         for name, meta in HOLIDAY_SUBCOMMANDS.items():
             lines.append(_format_command_help(f"holiday {name}", meta))
         
+        lines.append("\n*Directory commands:*")
+        for name, meta in DIRECTORY_SUBCOMMANDS.items():
+            lines.append(_format_command_help(f"directory {name}", meta))
+        
         lines.append(
             "\n*Examples:*\n"
             "• /ggp holiday new 23/04/2026 Vacation\n"
             "• /ggp holiday new 23/04/2026 AM Doctor\n"
             "• /ggp holiday cancel 123\n"
-            "• /ggp holiday cancel 150-155"
+            "• /ggp holiday cancel 150-155\n"
+            "• /ggp directory search john\n"
+            "• /ggp whois @john.doe"
         )
     else:
         lines.append(
             "\n_Run `/ggp connect <email> <password>` to link your account "
-            "and access holiday and profile commands._"
+            "and access holiday, directory, and profile commands._"
         )
         lines.append("\n*Available after connecting:*")
         for name, meta in AUTH_COMMANDS.items():
             lines.append(f"• /ggp {name} - {meta['description']}")
+        for name, meta in HOLIDAY_SUBCOMMANDS.items():
+            lines.append(f"• /ggp holiday {name} - {meta['description']}")
+        for name, meta in DIRECTORY_SUBCOMMANDS.items():
+            lines.append(f"• /ggp directory {name} - {meta['description']}")
         for name, meta in HOLIDAY_SUBCOMMANDS.items():
             lines.append(f"• /ggp holiday {name} - {meta['description']}")
     
@@ -577,6 +626,112 @@ async def _handle_whoami_subcommand(
         )
     except IntranetError as e:
         await respond(f":x: Failed to fetch profile: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_whois_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle the whois subcommand.
+    
+    Shows a user's profile and current status by Slack @mention.
+    Usage: /ggp whois @username
+    """
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    # Parse the @mention from args
+    target_user = args.strip()
+    
+    if not target_user:
+        await respond(
+            ":warning: *Usage:* `/ggp whois <@user>`\n"
+            "Example: `/ggp whois @john.doe`\n\n"
+            "Tip: Type @ and select the user from Slack's autocomplete."
+        )
+        return
+    
+    # Extract user ID from mention format <@U12345678> or <@U12345678|username>
+    import re
+    mention_match = re.match(r'<@([A-Z0-9]+)(?:\|[^>]+)?>', target_user)
+    
+    if not mention_match:
+        await respond(
+            ":warning: *Invalid user format*\n"
+            "Please use @mention to specify the user.\n"
+            "Example: `/ggp whois @john.doe`\n\n"
+            "Tip: Type @ and select the user from Slack's autocomplete."
+        )
+        return
+    
+    target_slack_id = mention_match.group(1)
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # Get the target user's profile by their Slack ID
+            user = await intranet.get_user_by_slack_id(target_slack_id)
+            
+            # Also fetch their status
+            status_data = await intranet.get_user_status(user.id)
+            status = status_data.get('status', {})
+            
+            lines = [f"*{user.name}* :bust_in_silhouette:"]
+            lines.append(f"• Email: {user.email}")
+            if user.department:
+                lines.append(f"• Department: {user.department}")
+            if user.job_title:
+                lines.append(f"• Job Title: {user.job_title}")
+            if user.phone:
+                lines.append(f"• Phone: {user.phone}")
+            if user.location:
+                lines.append(f"• Location: {user.location}")
+            
+            # Status information
+            if status:
+                is_working = status.get('is_working', False)
+                clocked_in = status.get('clocked_in', False)
+                current_absence = status.get('current_absence')
+                
+                status_parts = []
+                if current_absence:
+                    status_parts.append(f"📅 {current_absence}")
+                elif is_working:
+                    status_parts.append("💼 Working")
+                else:
+                    status_parts.append("⭕ Not working")
+                
+                if clocked_in:
+                    status_parts.append("⏰ Clocked in")
+                
+                lines.append(f"• Status: {' | '.join(status_parts)}")
+            
+            slack_status = ":white_check_mark: Linked" if user.slack_linked else ":x: Not linked"
+            lines.append(f"• Slack: {slack_status}")
+            
+            await respond("\n".join(lines))
+            
+    except IntranetSlackNotLinkedError:
+        await respond(
+            f":x: *That Slack user is not linked to the intranet.*\n"
+            f"The user may need to run `/ggp connect` to link their account."
+        )
+    except IntranetNotFoundError:
+        await respond(
+            f":x: *User not found*\n"
+            f"Could not find a user with that Slack ID in the intranet."
+        )
+    except IntranetAuthError:
+        await respond(
+            f":x: *Authentication Failed*\n"
+            f"Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to fetch user info: {e}")
     except Exception as e:
         await respond(f":x: Unexpected error: {e}")
 
@@ -1017,6 +1172,172 @@ async def _handle_holiday_subcommand(
 
 
 # ============================================================================
+# Directory Subcommand Handlers
+# ============================================================================
+
+async def _handle_directory_search_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle the directory search subcommand.
+    
+    Searches for users by name, email, or department.
+    Usage: /ggp directory search <query>
+    """
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    query = args.strip()
+    
+    if not query:
+        await respond(
+            ":warning: *Usage:* `/ggp directory search <query>`\n"
+            "Examples:\n"
+            "• `/ggp directory search john` (search by name)\n"
+            "• `/ggp directory search engineering` (search by department)\n"
+            "• `/ggp directory search john@company.com` (search by email)"
+        )
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            users = await intranet.search_users(query)
+            
+            if not users:
+                await respond(f"No users found matching '*{query}*'.")
+                return
+            
+            lines = [f"*Directory Search Results* :mag_right: ({len(users)} found)", ""]
+            
+            for user in users[:20]:  # Limit to 20 results
+                lines.append(f"*{user.name}*")
+                if user.email:
+                    lines.append(f"  📧 {user.email}")
+                if user.department:
+                    lines.append(f"  🏢 {user.department}")
+                if user.title:
+                    lines.append(f"  💼 {user.title}")
+                lines.append("")  # Blank line between users
+            
+            if len(users) > 20:
+                lines.append(f"_... and {len(users) - 20} more results. Refine your search._")
+            
+            await respond("\n".join(lines))
+            
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to search directory: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_directory_list_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle the directory list subcommand.
+    
+    Shows all users in the company directory.
+    Usage: /ggp directory list
+    """
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond)
+        return
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            users = await intranet.get_directory()
+            
+            if not users:
+                await respond("No users found in directory.")
+                return
+            
+            lines = [f"*Company Directory* :building_construction: ({len(users)} users)", ""]
+            
+            # Show first 30 users with name and department
+            for user in users[:30]:
+                dept = f" - {user.department}" if user.department else ""
+                lines.append(f"• {user.name}{dept}")
+            
+            if len(users) > 30:
+                lines.append(f"\n_... and {len(users) - 30} more users. Use `/ggp directory search` to find specific users._")
+            
+            lines.append(f"\n_Tip: Use `/ggp whois @user` to see detailed profile and status._")
+            
+            await respond("\n".join(lines))
+            
+    except IntranetAuthError:
+        await respond(
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
+        )
+    except IntranetError as e:
+        await respond(f":x: Failed to fetch directory: {e}")
+    except Exception as e:
+        await respond(f":x: Unexpected error: {e}")
+
+
+# ============================================================================
+# Directory Subcommand Dispatcher
+# ============================================================================
+
+async def _handle_directory_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Dispatch directory subcommands to their handlers.
+    
+    Args:
+        respond: Slack respond function
+        slack_user_id: The Slack user ID
+        args: Subcommand and arguments (e.g., "search john")
+        client: Optional Slack WebClient
+    """
+    # Parse the directory subcommand
+    parts = args.strip().split(None, 1)
+    subcommand = parts[0].lower() if parts else ""
+    sub_args = parts[1] if len(parts) > 1 else ""
+    
+    if subcommand == "search":
+        await _handle_directory_search_subcommand(respond, slack_user_id, sub_args, client)
+    elif subcommand == "list":
+        await _handle_directory_list_subcommand(respond, slack_user_id, client)
+    else:
+        # Unknown directory subcommand - suggest valid ones
+        valid_subcommands = list(DIRECTORY_SUBCOMMANDS.keys())
+        suggestion = _suggest_command(subcommand, [f"directory {cmd}" for cmd in valid_subcommands])
+        
+        if suggestion:
+            suggestion_clean = suggestion.replace("directory ", "")
+            await respond(
+                f":warning: Unknown directory subcommand '{subcommand}'.\n"
+                f"Did you mean: `directory {suggestion_clean}`?\n\n"
+                f"*Available directory commands:*\n"
+                f"• /ggp directory search <query> - Search by name/email/dept\n"
+                f"• /ggp directory list - Show all users\n\n"
+                f"Run `/ggp help directory` for more details."
+            )
+        else:
+            await respond(
+                f":warning: Unknown directory subcommand '{subcommand}'.\n\n"
+                f"*Available directory commands:*\n"
+                f"• /ggp directory search <query> - Search by name/email/dept\n"
+                f"• /ggp directory list - Show all users\n\n"
+                f"Run `/ggp help directory` for more details."
+            )
+
+
+# ============================================================================
 # Main Command Router
 # ============================================================================
 
@@ -1058,8 +1379,12 @@ async def handle_ggp_command(
         await _handle_connect_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "whoami":
         await _handle_whoami_subcommand(respond, slack_user_id, client)
+    elif subcommand == "whois":
+        await _handle_whois_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "holiday":
         await _handle_holiday_subcommand(respond, slack_user_id, args, client)
+    elif subcommand == "directory":
+        await _handle_directory_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "help":
         await _handle_help_subcommand(respond, slack_user_id, args)
     else:
