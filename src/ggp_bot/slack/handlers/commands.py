@@ -1780,8 +1780,7 @@ async def _handle_clock_today_subcommand(
             blocks = format_timecard_block("Time Card - Today", events)
             await respond(blocks=blocks)
             
-    except IntranetAuthError:
-        await respond(
+    except IntranetAuthError as e:
         logger.error(f"Authentication failed for user {slack_user_id} getting today's time card: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
