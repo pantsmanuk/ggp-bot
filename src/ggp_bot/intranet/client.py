@@ -92,7 +92,13 @@ class IntranetClient:
         """
         user_token = token_storage.get_token(slack_user_id)
         if not user_token:
-            logger.warning(f"No stored token found for user {slack_user_id}")
+            # Log audit summary to help diagnose why token is missing
+            logger.error(
+                f"TOKEN AUDIT: No valid token found for user {slack_user_id}. "
+                f"This could be: not linked, expired, decryption failed, or token was removed. "
+                f"Generating audit summary..."
+            )
+            token_storage.log_token_audit_summary()
             raise ValueError(
                 f"No stored token for user {slack_user_id}. "
                 "Please link your account first with /connect"
@@ -111,7 +117,10 @@ class IntranetClient:
             
             # Update stored token with correct scopes from API
             if actual_scopes and actual_scopes != user_token.scopes:
-                logger.info(f"Updating stored scopes from {user_token.scopes} to {actual_scopes}")
+                logger.info(
+                    f"TOKEN AUDIT: Scope refresh for user {slack_user_id}. "
+                    f"Stored: {user_token.scopes}, API returned: {actual_scopes}"
+                )
                 token_storage.save_token(
                     slack_user_id=slack_user_id,
                     token=user_token.token,
@@ -119,8 +128,14 @@ class IntranetClient:
                     expires_at=user_token.expires_at
                 )
                 user_token = token_storage.get_token(slack_user_id)
+                logger.info(f"TOKEN AUDIT: Scopes updated successfully for user {slack_user_id}")
+            else:
+                logger.debug(f"Scopes unchanged for user {slack_user_id}: {user_token.scopes}")
         except Exception as e:
-            logger.warning(f"Could not verify token scopes: {e}, using stored scopes: {user_token.scopes}")
+            logger.warning(
+                f"TOKEN AUDIT: Could not verify/refresh scopes for user {slack_user_id}: {e}. "
+                f"Using stored scopes: {user_token.scopes}"
+            )
         
         client._user_token = user_token
         return client
