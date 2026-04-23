@@ -10,16 +10,36 @@ This guide covers deploying ggp-bot to Ubuntu 24.04 as a production systemd serv
 - systemd
 - Git
 
-### Required Tokens
-Before starting, obtain these from your Slack app and intranet API:
+### Required Environment Variables
 
-| Variable | Source |
-|----------|--------|
-| `SLACK_BOT_TOKEN` | Slack app → OAuth & Permissions (starts with `xoxb-`) |
-| `SLACK_SIGNING_SECRET` | Slack app → Basic Information |
-| `SLACK_APP_TOKEN` | Slack app → Basic Information → App-Level Tokens (starts with `xapp-`) |
-| `INTRANET_API_TOKEN` | Intranet admin / API team |
-| `TOKEN_ENCRYPTION_KEY` | Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+Before starting, obtain and configure these variables:
+
+#### Slack (Required for Bot Operation)
+| Variable | Source | Required |
+|----------|--------|----------|
+| `SLACK_BOT_TOKEN` | Slack app → OAuth & Permissions (starts with `xoxb-`) | Yes |
+| `SLACK_SIGNING_SECRET` | Slack app → Basic Information | Yes |
+| `SLACK_APP_TOKEN` | Slack app → Basic Information → App-Level Tokens (starts with `xapp-`) | Yes |
+
+#### Intranet API (Required for Most Features)
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `INTRANET_BASE_URL` | Intranet API root URL (default: `https://intranet.ggpsystems.co.uk`) | Recommended |
+| `INTRANET_API_TOKEN` | Bearer token for API (bot-level, for public endpoints + linking) | Yes |
+
+#### Security (Required for Production)
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `TOKEN_ENCRYPTION_KEY` | Fernet encryption key for user token storage. Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` | **Strongly Recommended** |
+
+**Warning:** If `TOKEN_ENCRYPTION_KEY` is not set, the bot will derive a key from machine-specific data, making tokens only usable on that single machine. Always set this explicitly for production.
+
+#### Production Configuration (Recommended)
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LOG_LEVEL` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `INFO` |
+| `LOG_FILE` | Path to log file (logs to console only if not set) | (unset) |
+| `DATA_DIR` | Directory for SQLite databases (`tokens.db`, `lunch_timers.db`, `clock_state.db`) | `data` |
 
 ## Step 1: Create System User
 
@@ -97,23 +117,40 @@ Create the `.env` file with all required settings:
 
 ```bash
 sudo tee /var/www/ggp-bot/.env > /dev/null << 'EOF'
-# Slack Bot Configuration
+# =============================================================================
+# REQUIRED: Slack Bot Configuration
+# =============================================================================
 SLACK_BOT_TOKEN=xoxb-your-bot-token-here
 SLACK_SIGNING_SECRET=your-signing-secret-here
 SLACK_APP_TOKEN=xapp-your-app-level-token-here
 
-# Intranet API Configuration
+# =============================================================================
+# REQUIRED: Intranet API Configuration
+# =============================================================================
+# The bot uses two levels of authentication:
+# 1. BOT TOKEN (INTRANET_API_TOKEN) - For public endpoints and account linking
+# 2. USER TOKENS - Individual tokens stored per-user after /ggp connect
+#
 INTRANET_BASE_URL=https://intranet.ggpsystems.co.uk
 INTRANET_API_TOKEN=your-bot-bearer-token-here
 
-# Token Encryption (generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+# =============================================================================
+# REQUIRED: Token Encryption (CRITICAL for production)
+# =============================================================================
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# KEEP THIS KEY SECRET AND BACKED UP! If lost, all stored user tokens become unusable.
 TOKEN_ENCRYPTION_KEY=your-fernet-key-here
 
-# Logging Configuration
+# =============================================================================
+# RECOMMENDED: Production Logging Configuration
+# =============================================================================
 LOG_LEVEL=INFO
 LOG_FILE=/var/log/ggp-bot/ggp-bot.log
 
-# Data Directory
+# =============================================================================
+# REQUIRED: Data Directory (must match Step 2 permissions)
+# =============================================================================
+# Stores: tokens.db (encrypted user tokens), lunch_timers.db, clock_state.db
 DATA_DIR=/var/lib/ggp-bot
 EOF
 
@@ -122,7 +159,7 @@ sudo chown root:ggp-bot /var/www/ggp-bot/.env
 sudo chmod 640 /var/www/ggp-bot/.env
 ```
 
-**Important:** Replace all placeholder values with your actual tokens.
+**Critical:** Replace all placeholder values with your actual tokens. The `TOKEN_ENCRYPTION_KEY` is particularly important - generate it once and store it securely (e.g., in your password manager).
 
 ## Step 6: Install Systemd Service
 
@@ -308,13 +345,26 @@ Check Slack app configuration:
 
 ### Database Errors
 
+Common database issues:
+
 ```bash
 # Check database permissions
 ls -la /var/lib/ggp-bot/
 
-# Should be owned by ggp-bot
-sudo chown ggp-bot:ggp-bot /var/lib/ggp-bot/*.db
+# Should be owned by ggp-bot user
+cd /var/lib/ggp-bot
+sudo chown ggp-bot:ggp-bot *.db
+sudo chmod 660 *.db
+
+# Check directory permissions
+ls -ld /var/lib/ggp-bot
+# Should be: drwxr-x--- ggp-bot ggp-bot
 ```
+
+**Note:** Databases are created on first use. If you see "Permission denied" errors, ensure:
+1. `/var/lib/ggp-bot` exists and is owned by `ggp-bot:ggp-bot`
+2. The `DATA_DIR` env var matches this path
+3. SELinux/AppArmor aren't blocking access (check `/var/log/audit/audit.log`)
 
 ## Security Notes
 
@@ -326,15 +376,34 @@ sudo chown ggp-bot:ggp-bot /var/lib/ggp-bot/*.db
 
 ## Backup Considerations
 
-Important files to backup:
+Important files and directories to backup:
 
 ```
-/var/lib/ggp-bot/tokens.db          # User tokens (encrypted)
-/var/lib/ggp-bot/lunch_timers.db     # Active lunch timers
-/var/www/ggp-bot/.env               # Configuration (keep secrets secure!)
+/var/lib/ggp-bot/                  # DATA_DIR - All SQLite databases
+├── tokens.db                       # Encrypted user tokens (CRITICAL)
+├── lunch_timers.db                 # Active lunch timers
+└── clock_state.db                # Clock state tracking for #Attendance
+
+/var/www/ggp-bot/.env               # Configuration with secrets
+/etc/systemd/system/ggp-bot.service # Service configuration (optional)
 ```
 
-**Note:** `TOKEN_ENCRYPTION_KEY` is critical - if lost, stored tokens become unusable.
+**Critical Notes:**
+1. **`TOKEN_ENCRYPTION_KEY`** - If lost, all stored tokens become unusable and users must re-link accounts
+2. **`DATA_DIR`** - Should be backed up regularly; contains all runtime state
+3. **`.env file`** - Contains all secrets; store securely (e.g., encrypted password manager)
+
+## Runtime Files Reference
+
+The bot creates these files in `DATA_DIR` (default: `/var/lib/ggp-bot`):
+
+| File | Purpose | Backup Priority |
+|------|---------|-----------------|
+| `tokens.db` | Encrypted user tokens (SQLite) | **CRITICAL** - Users must re-link if lost |
+| `lunch_timers.db` | Active lunch break timers | Low - temporary state |
+| `clock_state.db` | Time clock state tracking for #Attendance | Medium - prevents duplicate posts |
+
+**Encryption:** `tokens.db` uses Fernet (AES-128) encryption. The `TOKEN_ENCRYPTION_KEY` is required to decrypt. Without it, the database is useless.
 
 ## Support
 
