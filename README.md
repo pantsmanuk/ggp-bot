@@ -180,6 +180,7 @@ See the intranet API documentation at https://intranet.ggpsystems.co.uk/docs for
 
 ## Version History
 
+- **1.0.0** - Initial stable release: Complete Slack bot for GGP intranet integration with holiday management, time clock, directory search, natural language @mentions, admin tools, and secure encrypted token storage
 - **0.6.0** - Consolidated slash commands into single `/ggp` interface with subcommands, added context-aware help and "did you mean?" suggestions
 - **0.5.0** - Secure per-user token storage with SQLite + Fernet encryption, two-level authentication (bot + user tokens), improved scope-based error handling
 - **0.3.3** - API v0.99.6 support: `/users/by-slack-id` endpoint, `SLACK_USER_NOT_LINKED` error handling
