@@ -4,13 +4,15 @@ import asyncio
 import logging
 import signal
 
+# Configure logging FIRST, before any imports that might instantiate
+# token_storage or other components that log during initialization
 from ggp_bot.logging_config import setup_logging
+setup_logging()
+
 from ggp_bot.slack.app import start_app, shutdown_app
 from ggp_bot.intranet.client import IntranetClient
 
 
-# Configure logging from environment settings
-setup_logging()
 logger = logging.getLogger(__name__)
 
 # Global shutdown event for coordinating graceful shutdown
