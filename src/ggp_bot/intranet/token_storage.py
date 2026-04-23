@@ -15,6 +15,7 @@ Example:
     >>> print(key.decode())  # Add this to .env as TOKEN_ENCRYPTION_KEY
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -257,7 +258,6 @@ class TokenStorage:
                 return None
             
             # Parse scopes from JSON
-            import json
             try:
                 scopes = json.loads(scopes_json)
             except json.JSONDecodeError as e:
@@ -270,6 +270,21 @@ class TokenStorage:
                 scopes=scopes,
                 created_at=created_at,
                 expires_at=expires_at
+            )
+            
+            # Integrity check: warn on empty scopes (don't delete - let API refresh)
+            if not scopes:
+                logger.warning(
+                    f"TOKEN AUDIT: User {slack_user_id} token has empty scopes. "
+                    f"Created: {created_at}, Age: {token_age_hours:.1f}h. "
+                    f"Token will be used but API may reject due to insufficient permissions."
+                )
+            
+            # Log token age for all successful retrievals (INFO level for audit trail)
+            age_str = f"{token_age_hours:.1f}h" if token_age_hours is not None else "unknown"
+            logger.debug(
+                f"TOKEN AUDIT: Token retrieved for user {slack_user_id}. "
+                f"Age: {age_str}, Scopes: {len(scopes)} scope(s)"
             )
             
             # Check expiry and clean up if expired
@@ -302,10 +317,6 @@ class TokenStorage:
         Returns:
             The stored UserToken (with decrypted token value)
         """
-        import json
-        
-        import json
-        
         # Check if this is a new token or an update
         is_update = self.has_token(slack_user_id)
         action = "UPDATED" if is_update else "CREATED"
@@ -445,7 +456,6 @@ class TokenStorage:
                 return
             
             logger.info(f"TOKEN AUDIT SUMMARY: {len(rows)} token(s) in storage")
-            import json
             
             for row in rows:
                 slack_id = row["slack_user_id"]
@@ -486,6 +496,134 @@ class TokenStorage:
                 
         except Exception as e:
             logger.error(f"TOKEN AUDIT: Failed to generate audit summary: {e}")
+    
+    def validate_all_tokens(self) -> dict[str, Any]:
+        """Validate all stored tokens for integrity issues.
+        
+        Performs validation without modifying the database:
+        - Checks if tokens can be decrypted
+        - Verifies scopes are present and valid JSON
+        - Reports expiry status
+        
+        Returns:
+            Dict with validation results:
+            {
+                'total': int,
+                'valid': int,
+                'warnings': int,
+                'errors': int,
+                'details': list[dict]  # Per-token details with issues
+            }
+        """
+        results = {
+            'total': 0,
+            'valid': 0,
+            'warnings': 0,
+            'errors': 0,
+            'details': []
+        }
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    "SELECT slack_user_id, encrypted_token, scopes, created_at, expires_at FROM user_tokens"
+                )
+                rows = cursor.fetchall()
+            
+            results['total'] = len(rows)
+            
+            if not rows:
+                logger.info("TOKEN AUDIT: No tokens to validate")
+                return results
+            
+            for row in rows:
+                slack_id = row["slack_user_id"]
+                scopes_json = row["scopes"]
+                expires_at = row["expires_at"]
+                created_at = row["created_at"]
+                encrypted_token = row["encrypted_token"]
+                
+                issues = []
+                token_age_hours = None
+                
+                # Calculate token age
+                try:
+                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    token_age_hours = (datetime.now(created_dt.tzinfo) - created_dt).total_seconds() / 3600
+                except (ValueError, TypeError):
+                    issues.append("invalid_created_at")
+                
+                # Check decryption
+                try:
+                    self._decrypt(encrypted_token)
+                except Exception as e:
+                    issues.append(f"decryption_failed: {type(e).__name__}")
+                    logger.error(
+                        f"TOKEN AUDIT: Token validation failed for user {slack_id}. "
+                        f"Decryption error: {type(e).__name__}, Created: {created_at}"
+                    )
+                
+                # Check scopes
+                try:
+                    scopes = json.loads(scopes_json) if scopes_json else []
+                    if not scopes:
+                        issues.append("empty_scopes")
+                        logger.warning(
+                            f"TOKEN AUDIT: User {slack_id} has empty scopes. "
+                            f"Created: {created_at}, Age: {token_age_hours:.1f}h if token_age_hours else 'unknown'"
+                        )
+                except json.JSONDecodeError:
+                    issues.append("invalid_scopes_json")
+                    logger.warning(
+                        f"TOKEN AUDIT: User {slack_id} has invalid scopes JSON. "
+                        f"Created: {created_at}"
+                    )
+                
+                # Check expiry
+                if expires_at:
+                    try:
+                        expiry_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                        if datetime.now(expiry_dt.tzinfo) > expiry_dt:
+                            issues.append("expired")
+                            # Note: get_token would remove this, but we're just validating
+                    except (ValueError, TypeError):
+                        issues.append("invalid_expiry_format")
+                
+                # Categorize result
+                if not issues:
+                    results['valid'] += 1
+                elif any(i.startswith('decryption_failed') or i == 'invalid_scopes_json' 
+                        for i in issues):
+                    results['errors'] += 1
+                else:
+                    results['warnings'] += 1
+                
+                if issues:
+                    results['details'].append({
+                        'user_id': slack_id,
+                        'issues': issues,
+                        'created_at': created_at,
+                        'age_hours': token_age_hours
+                    })
+            
+            # Log summary
+            logger.info(
+                f"TOKEN AUDIT: Validation complete. "
+                f"Total: {results['total']}, Valid: {results['valid']}, "
+                f"Warnings: {results['warnings']}, Errors: {results['errors']}"
+            )
+            
+            return results
+            
+        except sqlite3.Error as e:
+            logger.error(f"TOKEN AUDIT: Database error during validation: {e}")
+            results['errors'] += 1
+            return results
+        except Exception as e:
+            logger.error(f"TOKEN AUDIT: Validation failed with error: {e}")
+            results['errors'] += 1
+            return results
 
 
 # Global token storage instance
