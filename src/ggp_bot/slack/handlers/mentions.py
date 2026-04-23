@@ -133,6 +133,7 @@ async def _handle_mention_holiday_list(
 ) -> None:
     """Handle holiday list intent via mention."""
     if not _check_user_linked(slack_user_id):
+        logger.error(f"User {slack_user_id} attempted holiday list via mention but account not linked")
         await say(
             ":x: Your Slack account is not linked. "
             "Run `/ggp connect <email> <password>` to link your account."
@@ -161,6 +162,7 @@ async def _handle_mention_holiday_balance(
 ) -> None:
     """Handle holiday balance intent via mention."""
     if not _check_user_linked(slack_user_id):
+        logger.error(f"User {slack_user_id} attempted holiday balance via mention but account not linked")
         await say(
             ":x: Your Slack account is not linked. "
             "Run `/ggp connect <email> <password>` to link your account."
@@ -207,6 +209,7 @@ async def _handle_mention_clock_status(
 ) -> None:
     """Handle clock status intent via mention."""
     if not _check_user_linked(slack_user_id):
+        logger.error(f"User {slack_user_id} attempted clock status via mention but account not linked")
         await say(
             ":x: Your Slack account is not linked. "
             "Run `/ggp connect <email> <password>` to link your account."
@@ -234,6 +237,7 @@ async def _handle_mention_whois(
 ) -> None:
     """Handle whois intent via mention."""
     if not _check_user_linked(slack_user_id):
+        logger.error(f"User {slack_user_id} attempted whois via mention but account not linked")
         await say(
             ":x: Your Slack account is not linked. "
             "Run `/ggp connect <email> <password>` to link your account."
@@ -262,6 +266,7 @@ async def _handle_mention_whoami(
 ) -> None:
     """Handle whoami intent via mention."""
     if not _check_user_linked(slack_user_id):
+        logger.error(f"User {slack_user_id} attempted whoami via mention but account not linked")
         await say(
             ":x: Your Slack account is not linked. "
             "Run `/ggp connect <email> <password>` to link your account."
@@ -289,6 +294,7 @@ async def _handle_mention_directory_search(
 ) -> None:
     """Handle directory search intent via mention."""
     if not _check_user_linked(slack_user_id):
+        logger.error(f"User {slack_user_id} attempted directory search via mention but account not linked")
         await say(
             ":x: Your Slack account is not linked. "
             "Run `/ggp connect <email> <password>` to link your account."

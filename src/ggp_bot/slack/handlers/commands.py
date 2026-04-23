@@ -545,12 +545,16 @@ def _check_user_linked(slack_user_id: str) -> bool:
     return has_token
 
 
-async def _handle_not_linked(respond: AsyncRespond) -> None:
+async def _handle_not_linked(respond: AsyncRespond, slack_user_id: str | None = None) -> None:
     """Send a standard response for users who haven't linked their account."""
-    await respond(
+    error_msg = (
         ":x: *Your Slack account is not linked to the intranet.*\n"
         "Please run `/ggp connect <intranet-email> <password>` to link your accounts."
     )
+    await respond(error_msg)
+    # Log this user-facing error so admins can diagnose issues
+    user_info = f" (user: {slack_user_id})" if slack_user_id else ""
+    logger.error(f"User attempted command but account not linked{user_info}")
 
 
 # ============================================================================
@@ -584,8 +588,10 @@ async def _handle_status_subcommand(
                 f"• Last checked: {health.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') if health.timestamp else 'N/A'}"
             )
         except IntranetError as e:
+            logger.error(f"Intranet connection failed in status command: {e}")
             await respond(f":x: Intranet connection failed: {e}")
         except Exception as e:
+            logger.error(f"Unexpected error in status command: {e}", exc_info=True)
             await respond(f":x: Unexpected error: {e}")
 
 
@@ -610,8 +616,10 @@ async def _handle_bank_holiday_subcommand(
                 f"• Coming up: {days_text}"
             )
         except IntranetError as e:
+            logger.error(f"Failed to fetch public holiday: {e}")
             await respond(f":x: Failed to fetch public holiday: {e}")
         except Exception as e:
+            logger.error(f"Unexpected error fetching public holiday: {e}", exc_info=True)
             await respond(f":x: Unexpected error: {e}")
 
 
@@ -694,22 +702,27 @@ async def _handle_connect_subcommand(
                 )
             else:
                 message = result.get("message", "Unknown error")
+                logger.error(f"Account linking failed for user: {message}")
                 await respond(f":x: Linking failed: {message}")
                 
-        except IntranetScopeError:
+        except IntranetScopeError as e:
+            logger.error(f"Bot lacks permission to link accounts: {e}")
             await respond(
                 ":x: *Bot Configuration Error*\n"
                 "The bot doesn't have permission to link accounts. "
                 "Please contact an administrator."
             )
-        except IntranetAuthError:
+        except IntranetAuthError as e:
+            logger.error(f"Bot authentication error during linking: {e}")
             await respond(
                 ":x: *Bot Authentication Error*\n"
                 "The bot is not properly configured. Please contact an administrator."
             )
         except IntranetError as e:
+            logger.error(f"Failed to link account: {e}")
             await respond(f":x: Failed to link account: {e}")
         except Exception as e:
+            logger.error(f"Unexpected error during account linking: {e}", exc_info=True)
             await respond(f":x: Unexpected error: {e}")
 
 
@@ -758,18 +771,22 @@ async def _handle_whoami_subcommand(
             await respond("\n".join(lines))
             
     except IntranetSlackNotLinkedError:
+        logger.error(f"User {slack_user_id} attempted whoami but account not linked to intranet")
         await respond(
             f":x: *Your Slack account is not linked to the intranet.*\n"
             f"Please run `/ggp connect <intranet-email> <password>` to link your accounts."
         )
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} during whoami: {e}")
         await respond(
             f":x: *Authentication Failed*\n"
             f"Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to fetch profile for user {slack_user_id}: {e}")
         await respond(f":x: Failed to fetch profile: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error fetching profile for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -927,23 +944,28 @@ async def _handle_whois_subcommand(
             await respond("\n".join(lines))
             
     except IntranetSlackNotLinkedError:
+        logger.error(f"Target Slack user not linked to intranet during whois lookup by {slack_user_id}")
         await respond(
             f":x: *That Slack user is not linked to the intranet.*\n"
             f"The user may need to run `/ggp connect` to link their account."
         )
     except IntranetNotFoundError:
+        logger.error(f"User not found during whois lookup by {slack_user_id}")
         await respond(
             f":x: *User not found*\n"
             f"Could not find a user with that Slack ID in the intranet."
         )
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} during whois: {e}")
         await respond(
             f":x: *Authentication Failed*\n"
             f"Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to fetch user info during whois by {slack_user_id}: {e}")
         await respond(f":x: Failed to fetch user info: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error during whois by {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -954,7 +976,7 @@ async def _handle_holiday_balance_subcommand(
 ) -> None:
     """Handle the holiday balance subcommand (was /holiday-entitlement)."""
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     try:
@@ -972,20 +994,24 @@ async def _handle_holiday_balance_subcommand(
                 f"• Pending: {entitlement.pending} days\n"
                 f"• Company Year: {year_start} to {year_end}"
             )
-    except IntranetScopeError:
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks permission to view holiday entitlement: {e}")
         await respond(
             ":x: *Permission Denied*\n"
             "Your account doesn't have permission to view holiday entitlement. "
             "Please contact an administrator."
         )
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} viewing holiday entitlement: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to fetch holiday entitlement for user {slack_user_id}: {e}")
         await respond(f":x: Failed to fetch entitlement: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error fetching holiday entitlement for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -996,7 +1022,7 @@ async def _handle_holiday_list_subcommand(
 ) -> None:
     """Handle the holiday list subcommand (was /my-holidays)."""
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     try:
@@ -1024,20 +1050,24 @@ async def _handle_holiday_list_subcommand(
             
             await respond("\n".join(lines))
             
-    except IntranetScopeError:
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks permission to view holidays: {e}")
         await respond(
             ":x: *Permission Denied*\n"
             "Your account doesn't have permission to view holidays. "
             "Please contact an administrator."
         )
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} viewing holidays: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to fetch holidays for user {slack_user_id}: {e}")
         await respond(f":x: Failed to fetch holidays: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error fetching holidays for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1060,7 +1090,7 @@ async def _handle_holiday_new_subcommand(
     Half-day markers: AM or PM (optional, can be specified for start and/or end)
     """
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     # Parse command arguments
@@ -1084,6 +1114,7 @@ async def _handle_holiday_new_subcommand(
         # Parse dates and half-day markers
         start_date, end_date, start_half_day, end_half_day, note = parse_holiday_request(text)
     except ValueError as e:
+        logger.warning(f"User {slack_user_id} provided invalid date format: {e}")
         await respond(
             f":warning: *Invalid date format:* {e}\n\n"
             "*Supported formats:*\n"
@@ -1102,6 +1133,10 @@ async def _handle_holiday_new_subcommand(
             
             # Check if user has write permission
             if not intranet.has_scope("bot:holiday:write"):
+                logger.error(
+                    f"User {slack_user_id} denied holiday write permission. "
+                    f"Has scopes: {intranet.scopes}, missing: bot:holiday:write"
+                )
                 await respond(
                     ":x: *Permission Denied*\n"
                     f"Your token has these scopes: {', '.join(intranet.scopes) or 'none'}\n"
@@ -1156,26 +1191,34 @@ async def _handle_holiday_new_subcommand(
         details = e.details or {}
         shortfall = details.get("shortfall", "unknown")
         remaining = details.get("remaining_days", "unknown")
+        logger.error(
+            f"User {slack_user_id} has insufficient holiday days. "
+            f"Remaining: {remaining}, Shortfall: {shortfall}"
+        )
         await respond(
             f":x: *Insufficient Holiday Days*\n"
             f"You don't have enough days remaining.\n"
             f"• Remaining: {remaining} days\n"
             f"• Shortfall: {shortfall} days"
         )
-    except IntranetScopeError:
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks permission to request holidays: {e}")
         await respond(
             ":x: *Permission Denied*\n"
             "Your account doesn't have permission to request holidays. "
             "Please contact an administrator."
         )
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} requesting holiday: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to request holiday for user {slack_user_id}: {e}")
         await respond(f":x: Failed to request holiday: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error requesting holiday for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1194,13 +1237,14 @@ async def _handle_holiday_cancel_subcommand(
     - /ggp holiday cancel 150, 152-155, 158 (mixed)
     """
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     # Parse command arguments
     text = args.strip()
     
     if not text:
+        logger.warning(f"User {slack_user_id} attempted holiday cancel without providing IDs")
         await respond(
             ":warning: *Usage:* `/ggp holiday cancel <ids>`\n"
             "*Single:* `/ggp holiday cancel 123`\n"
@@ -1214,6 +1258,7 @@ async def _handle_holiday_cancel_subcommand(
     # Validate the ID format (allow: numbers, commas, hyphens, spaces)
     import re
     if not re.match(r'^[\d\s,\-]+$', text):
+        logger.warning(f"User {slack_user_id} provided invalid holiday ID format: {text}")
         await respond(
             ":warning: *Invalid holiday ID format*\n"
             "Please provide valid holiday IDs.\n"
@@ -1231,6 +1276,10 @@ async def _handle_holiday_cancel_subcommand(
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             # Check if user has write permission
             if not intranet.has_scope("bot:holiday:write"):
+                logger.error(
+                    f"User {slack_user_id} denied permission to cancel holidays. "
+                    f"Has scopes: {intranet.scopes}"
+                )
                 await respond(
                     ":x: *Permission Denied*\n"
                     "Your account doesn't have permission to cancel holidays. "
@@ -1279,6 +1328,7 @@ async def _handle_holiday_cancel_subcommand(
                 try:
                     holiday_id = int(text.split()[0])
                 except ValueError:
+                    logger.warning(f"User {slack_user_id} provided invalid holiday ID: {text}")
                     await respond(
                         ":warning: *Invalid holiday ID*\n"
                         "Please provide a valid number.\n"
@@ -1304,26 +1354,31 @@ async def _handle_holiday_cancel_subcommand(
                     f"{days_text}"
                 )
             
-    except IntranetNotFoundError:
+    except IntranetNotFoundError as e:
+        logger.error(f"User {slack_user_id} attempted to cancel non-existent holiday: {e}")
         await respond(
             f":x: *Holiday not found*\n"
             f"Could not find one or more holiday requests.\n"
             "Use `/ggp holiday list` to see your current holiday requests."
         )
-    except IntranetScopeError:
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks permission to cancel holidays: {e}")
         await respond(
             ":x: *Permission Denied*\n"
             "Your account doesn't have permission to cancel holidays. "
             "Please contact an administrator."
         )
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} canceling holiday: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to cancel holiday for user {slack_user_id}: {e}")
         await respond(f":x: Failed to cancel holiday: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error canceling holiday for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1403,12 +1458,13 @@ async def _handle_directory_search_subcommand(
     Usage: /ggp directory search <query>
     """
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     query = args.strip()
     
     if not query:
+        logger.warning(f"User {slack_user_id} attempted directory search without query")
         await respond(
             ":warning: *Usage:* `/ggp directory search <query>`\n"
             "Examples:\n"
@@ -1443,14 +1499,17 @@ async def _handle_directory_search_subcommand(
             
             await respond("\n".join(lines))
             
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} during directory search: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to search directory for user {slack_user_id}: {e}")
         await respond(f":x: Failed to search directory: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error during directory search for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1465,7 +1524,7 @@ async def _handle_directory_list_subcommand(
     Usage: /ggp directory list
     """
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     try:
@@ -1490,14 +1549,17 @@ async def _handle_directory_list_subcommand(
             
             await respond("\n".join(lines))
             
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} fetching directory: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to fetch directory for user {slack_user_id}: {e}")
         await respond(f":x: Failed to fetch directory: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error fetching directory for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1574,13 +1636,17 @@ async def _handle_clock_in_out_subcommand(
         client: Slack WebClient for #Attendance posting
     """
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     # Check for timeclock:write scope
     from ggp_bot.intranet.token_storage import token_storage
     user_token = token_storage.get_token(slack_user_id)
     if user_token and not user_token.has_scope("bot:timeclock:write"):
+        logger.error(
+            f"User {slack_user_id} denied time clock write permission. "
+            f"Has scopes: {user_token.scopes}, missing: bot:timeclock:write"
+        )
         await respond(
             ":x: *Permission Denied*\n"
             "Your token doesn't have time clock write permission.\n"
@@ -1618,7 +1684,7 @@ async def _handle_clock_in_out_subcommand(
                     logger.debug(f"Posted to #Attendance: {attendance_msg}")
                 except Exception as e:
                     # Log error but don't fail the command
-                    print(f"[ERROR] Failed to post to #Attendance: {e}")
+                    logger.error(f"Failed to post to #Attendance for user {slack_user_id}: {e}")
                 
                 # Update tracking state
                 timeclock_tracker.update_state(slack_user_id, event_type, event_id)
@@ -1636,13 +1702,16 @@ async def _handle_clock_in_out_subcommand(
             await respond(confirmation)
             
     except IntranetAuthError:
+        logger.error(f"Authentication failed for user {slack_user_id} during clock {event_type}: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to clock {event_type} for user {slack_user_id}: {e}")
         await respond(f":x: Failed to clock {event_type}: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error during clock {event_type} for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1653,7 +1722,7 @@ async def _handle_clock_status_subcommand(
 ) -> None:
     """Handle clock status command (shows current clocked in/out state)."""
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     try:
@@ -1680,8 +1749,10 @@ async def _handle_clock_status_subcommand(
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to get clock status for user {slack_user_id}: {e}")
         await respond(f":x: Failed to get clock status: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error getting clock status for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1692,7 +1763,7 @@ async def _handle_clock_today_subcommand(
 ) -> None:
     """Handle clock today command (shows today's time card)."""
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     try:
@@ -1711,12 +1782,16 @@ async def _handle_clock_today_subcommand(
             
     except IntranetAuthError:
         await respond(
+        logger.error(f"Authentication failed for user {slack_user_id} getting today's time card: {e}")
+        await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to get today's time card for user {slack_user_id}: {e}")
         await respond(f":x: Failed to get today's time card: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error getting today's time card for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1727,7 +1802,7 @@ async def _handle_clock_week_subcommand(
 ) -> None:
     """Handle clock week command (shows this week's time card)."""
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     try:
@@ -1744,14 +1819,17 @@ async def _handle_clock_week_subcommand(
             blocks = format_timecard_block("Time Card - This Week", events)
             await respond(blocks=blocks)
             
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} getting week's time card: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to get week's time card for user {slack_user_id}: {e}")
         await respond(f":x: Failed to get week's time card: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error getting week's time card for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
@@ -1765,13 +1843,17 @@ async def _handle_clock_lunch_subcommand(
     Idempotent - silently swallows duplicate calls.
     """
     if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond)
+        await _handle_not_linked(respond, slack_user_id)
         return
     
     # Check for timeclock:write scope
     from ggp_bot.intranet.token_storage import token_storage
     user_token = token_storage.get_token(slack_user_id)
     if user_token and not user_token.has_scope("bot:timeclock:write"):
+        logger.error(
+            f"User {slack_user_id} denied time clock write permission for lunch timer. "
+            f"Has scopes: {user_token.scopes}"
+        )
         await respond(
             ":x: *Permission Denied*\n"
             "Your token doesn't have time clock write permission.\n"
@@ -1815,16 +1897,19 @@ async def _handle_clock_lunch_subcommand(
                 )
             except Exception as e:
                 # Log but don't fail
-                print(f"[ERROR] Failed to post to #Attendance: {e}")
+                logger.error(f"Failed to post lunch to #Attendance for user {slack_user_id}: {e}")
             
-    except IntranetAuthError:
+    except IntranetAuthError as e:
+        logger.error(f"Authentication failed for user {slack_user_id} starting lunch timer: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
             "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
+        logger.error(f"Failed to start lunch timer for user {slack_user_id}: {e}")
         await respond(f":x: Failed to start lunch timer: {e}")
     except Exception as e:
+        logger.error(f"Unexpected error starting lunch timer for user {slack_user_id}: {e}", exc_info=True)
         await respond(f":x: Unexpected error: {e}")
 
 
