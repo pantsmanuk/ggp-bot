@@ -2193,19 +2193,12 @@ async def _handle_admin_cache_clear_subcommand(
         except Exception as e:
             logger.debug(f"admin cache clear: Slack API resolution failed: {e}")
 
-    # Method 3: Direct Slack user ID (e.g., U09DB3RLKL4)
-    if not target_slack_id and re.match(r'^[A-Z][A-Z0-9]+$', target_user):
-        target_slack_id = target_user
-        logger.debug(f"admin cache clear: using direct slack_id = '{target_slack_id}'")
-
     if not target_slack_id:
         await respond(
             ":x: *Could not identify user*\n"
             f"Received: `{target_user}`\n\n"
-            "Please use @mention to specify the user, or provide a valid Slack user ID.\n"
-            "Examples:\n"
-            "• `/ggp admin cache clear @john.doe`\n"
-            "• `/ggp admin cache clear U12345678`"
+            "Please use @mention to specify the user.\n"
+            "Example: `/ggp admin cache clear @john.doe`"
         )
         return
 
