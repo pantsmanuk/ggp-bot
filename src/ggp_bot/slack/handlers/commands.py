@@ -225,7 +225,11 @@ ADMIN_SUBCOMMANDS = {
 
 
 def _get_all_command_names() -> list[str]:
-    """Get list of all valid command names for suggestion matching."""
+    """Get list of all valid command names for suggestion matching.
+    
+    Note: Admin commands are excluded from suggestions as they should
+    only be discoverable by admin users via /ggp help output.
+    """
     names = list(PUBLIC_COMMANDS.keys()) + list(AUTH_COMMANDS.keys())
     # Add holiday subcommands as 'holiday <subcmd>'
     for subcmd in HOLIDAY_SUBCOMMANDS.keys():
@@ -236,9 +240,7 @@ def _get_all_command_names() -> list[str]:
     # Add clock subcommands as 'clock <subcmd>'
     for subcmd in CLOCK_SUBCOMMANDS.keys():
         names.append(f"clock {subcmd}")
-    # Add admin subcommands as 'admin <subcmd>'
-    for subcmd in ADMIN_SUBCOMMANDS.keys():
-        names.append(f"admin {subcmd}")
+    # Admin commands intentionally excluded - only discoverable by admins
     return names
 
 
@@ -439,6 +441,14 @@ async def _handle_help_subcommand(
         
         # Check for admin as a top-level help topic
         if topic_lower == "admin":
+            # Only show admin help to admin users
+            if not await _check_is_admin_silent(slack_user_id):
+                await respond(
+                    ":warning: Unknown command 'admin'.\n\n"
+                    f"Run `/ggp help` to see all available commands."
+                )
+                return
+            
             help_text = (
                 "*/ggp admin [subcommand]*\n"
                 "Administrative commands for bot management.\n\n"
@@ -493,9 +503,12 @@ async def _handle_help_subcommand(
         for name, meta in CLOCK_SUBCOMMANDS.items():
             lines.append(_format_command_help(f"clock {name}", meta))
         
-        lines.append("\n*Admin commands:*")
-        for name, meta in ADMIN_SUBCOMMANDS.items():
-            lines.append(_format_command_help(f"admin {name}", meta))
+        # Only show admin commands to admin users
+        is_admin = await _check_is_admin_silent(slack_user_id)
+        if is_admin:
+            lines.append("\n*Admin commands:*")
+            for name, meta in ADMIN_SUBCOMMANDS.items():
+                lines.append(_format_command_help(f"admin {name}", meta))
         
         lines.append(
             "\n*Examples:*\n"
@@ -2072,6 +2085,30 @@ async def _require_admin(
             ":x: *Failed to verify admin status*\n"
             "Could not retrieve your user profile. Please try again."
         )
+        return False
+
+
+async def _check_is_admin_silent(slack_user_id: str) -> bool:
+    """Silently check if a user has admin role.
+    
+    This is used for conditional help display - it checks admin status
+    without sending any responses to the user.
+    
+    Args:
+        slack_user_id: The Slack user ID to check
+        
+    Returns:
+        True if user is admin, False otherwise (including on error)
+    """
+    if not token_storage.has_token(slack_user_id):
+        return False
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            user = await intranet.get_user_by_slack_id(slack_user_id)
+            return user.role == "admin"
+    except Exception:
+        # On any error (API failure, etc.), default to False (not admin)
         return False
 
 
