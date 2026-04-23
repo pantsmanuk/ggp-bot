@@ -105,6 +105,9 @@ See [DEPLOY.md](DEPLOY.md) for production deployment instructions (systemd servi
 | `INTRANET_BASE_URL` | Laravel API root | `https://intranet.ggpsystems.co.uk` |
 | `INTRANET_API_TOKEN` | Bearer token for API | Intranet admin / API team |
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for user token encryption | Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `LOG_LEVEL` | Logging level | `INFO` (options: DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+| `LOG_FILE` | Optional file path for logs | e.g., `/var/log/ggp-bot/ggp-bot.log` (logs to console only if not set) |
+| `DATA_DIR` | Directory for SQLite databases | e.g., `/var/lib/ggp-bot` or `data` for development |
 | `JENKINS_URL` | Jenkins root (Phase 2) | Future |
 | `JENKINS_USER` / `JENKINS_TOKEN` | Jenkins API creds (Phase 2) | Future |
 
@@ -173,7 +176,7 @@ The bot is aligned with **GGP Intranet API v0.99.6**:
 - Time clock today/week: `GET /api/timeclock/today`, `GET /api/timeclock/week`
 - Directory search: `GET /api/users/search`
 
-See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API documentation.
+See the intranet API documentation at https://intranet.ggpsystems.co.uk/docs for full API reference.
 
 ## Version History
 
@@ -220,4 +223,4 @@ See `/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md` for full API docum
 
 For bot issues: Check logs and verify API connectivity with `/ggp status`
 
-For API issues: See `API_BOT_DEVELOPER_GUIDE.md` in intranet project
+For API issues: See the API documentation at https://intranet.ggpsystems.co.uk/docs
