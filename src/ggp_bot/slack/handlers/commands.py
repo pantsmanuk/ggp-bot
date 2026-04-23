@@ -454,7 +454,7 @@ async def _handle_help_subcommand(
                 "• /ggp admin gc status\n"
                 "• /ggp admin gc run\n"
                 "• /ggp admin integrity check\n\n"
-                "_Note: Admin commands require a linked account._"
+                "_Note: Admin commands require an admin role._"
             )
             await respond(help_text)
             return
@@ -2029,6 +2029,52 @@ async def _handle_clock_subcommand(
 # Admin Subcommand Handlers
 # ============================================================================
 
+async def _require_admin(
+    respond: AsyncRespond,
+    slack_user_id: str
+) -> bool:
+    """Check if the user has admin role.
+    
+    Fetches the user's profile from the API and checks if role == "admin".
+    
+    Args:
+        respond: Slack respond function
+        slack_user_id: The Slack user ID to check
+        
+    Returns:
+        True if user is admin, False otherwise
+    """
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond, slack_user_id)
+        return False
+    
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            user = await intranet.get_user_by_slack_id(slack_user_id)
+            
+            if user.role != "admin":
+                logger.warning(
+                    f"ADMIN: User {slack_user_id} attempted admin command "
+                    f"but has role='{user.role}'"
+                )
+                await respond(
+                    ":x: *Admin Access Denied*\n"
+                    "This command requires admin privileges. "
+                    "Your role: " + (user.role or "user")
+                )
+                return False
+            
+            return True
+            
+    except Exception as e:
+        logger.error(f"ADMIN: Failed to check admin status for {slack_user_id}: {e}")
+        await respond(
+            ":x: *Failed to verify admin status*\n"
+            "Could not retrieve your user profile. Please try again."
+        )
+        return False
+
+
 async def _handle_admin_cache_clear_subcommand(
     respond: AsyncRespond,
     slack_user_id: str,
@@ -2036,8 +2082,7 @@ async def _handle_admin_cache_clear_subcommand(
     client: AsyncWebClient | None = None
 ) -> None:
     """Handle admin cache clear - remove specific user from token cache."""
-    if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond, slack_user_id)
+    if not await _require_admin(respond, slack_user_id):
         return
     
     target_user = args.strip()
@@ -2089,8 +2134,7 @@ async def _handle_admin_cache_status_subcommand(
     client: AsyncWebClient | None = None
 ) -> None:
     """Handle admin cache status - show token cache statistics."""
-    if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond, slack_user_id)
+    if not await _require_admin(respond, slack_user_id):
         return
     
     try:
@@ -2114,8 +2158,7 @@ async def _handle_admin_gc_status_subcommand(
     client: AsyncWebClient | None = None
 ) -> None:
     """Handle admin gc status - show GC schedule and last run."""
-    if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond, slack_user_id)
+    if not await _require_admin(respond, slack_user_id):
         return
     
     try:
@@ -2150,8 +2193,7 @@ async def _handle_admin_gc_run_subcommand(
     client: AsyncWebClient | None = None
 ) -> None:
     """Handle admin gc run - manually trigger garbage collection."""
-    if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond, slack_user_id)
+    if not await _require_admin(respond, slack_user_id):
         return
     
     logger.info(f"ADMIN: User {slack_user_id} triggered manual GC run")
@@ -2188,8 +2230,7 @@ async def _handle_admin_integrity_check_subcommand(
     client: AsyncWebClient | None = None
 ) -> None:
     """Handle admin integrity check - validate all databases."""
-    if not _check_user_linked(slack_user_id):
-        await _handle_not_linked(respond, slack_user_id)
+    if not await _require_admin(respond, slack_user_id):
         return
     
     logger.info(f"ADMIN: User {slack_user_id} triggered integrity check")

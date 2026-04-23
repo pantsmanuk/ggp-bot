@@ -127,6 +127,7 @@ class UserProfile(BaseModel):
     manager_id: int | None = None
     slack_linked: bool = False
     slack_user_id: str | None = None
+    role: str | None = Field(default=None, description="User role: 'admin' or 'user'")
 
 
 class UserSearchResult(BaseModel):
@@ -138,6 +139,7 @@ class UserSearchResult(BaseModel):
     department: str | None = None
     title: str | None = None
     slack_linked: bool = False
+    role: str | None = Field(default=None, description="User role: 'admin' or 'user'")
 
 
 class UserStatus(BaseModel):
