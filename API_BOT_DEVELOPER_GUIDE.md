@@ -1,1 +1,0 @@
-/home/murrayc/c/ggp-intranet/API_BOT_DEVELOPER_GUIDE.md
