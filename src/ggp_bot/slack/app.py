@@ -107,8 +107,8 @@ async def shutdown_app() -> None:
     if _handler:
         logger.debug("Stopping Slack Socket Mode handler...")
         try:
-            # Use stop_async() to properly close the handler
-            await _handler.stop_async()
+            # Use close_async() to properly close the handler and clean up resources
+            await _handler.close_async()
             logger.debug("Slack handler stopped successfully")
         except Exception as e:
             logger.warning(f"Error stopping Slack handler: {e}")
