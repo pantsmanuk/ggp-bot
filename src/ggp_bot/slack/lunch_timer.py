@@ -67,10 +67,17 @@ class LunchTimerManager:
             data_dir.mkdir(parents=True, exist_ok=True)
             self.db_path = data_dir / "lunch_timers.db"
         
+        # Check if database is new or existing for logging
+        db_exists = self.db_path.exists()
+        db_status = "opened" if db_exists else "created"
+        
         self._init_database()
         self._active_timers: dict[str, LunchTimer] = {}
         self._check_task: Optional[asyncio.Task] = None
         self._client: Optional[AsyncWebClient] = None
+        
+        # Log database initialization at INFO level
+        logger.info(f"Lunch timer database {db_status}: {self.db_path}")
     
     def _init_database(self) -> None:
         """Initialize the SQLite database with required table."""

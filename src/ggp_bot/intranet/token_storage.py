@@ -98,11 +98,18 @@ class TokenStorage:
         self.db_path = Path(db_path or self.DEFAULT_DB_PATH)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Check if database is new or existing for logging
+        db_exists = self.db_path.exists()
+        db_status = "opened" if db_exists else "created"
+        
         # Initialize encryption
         self._fernet = self._init_encryption(encryption_key)
         
         # Initialize database
         self._init_database()
+        
+        # Log database initialization at INFO level
+        logger.info(f"Token storage database {db_status}: {self.db_path}")
     
     def _init_encryption(self, key: str | None = None) -> Fernet:
         """Initialize Fernet encryption.

@@ -36,7 +36,14 @@ class TimeClockStateTracker:
             data_dir.mkdir(parents=True, exist_ok=True)
             self.db_path = data_dir / "timeclock_state.db"
         
+        # Check if database is new or existing for logging
+        db_exists = self.db_path.exists()
+        db_status = "opened" if db_exists else "created"
+        
         self._init_db()
+        
+        # Log database initialization at INFO level
+        logger.info(f"Time clock state database {db_status}: {self.db_path}")
     
     def _init_db(self) -> None:
         """Initialize the SQLite database with required table."""
