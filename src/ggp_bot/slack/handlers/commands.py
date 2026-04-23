@@ -2131,20 +2131,84 @@ async def _handle_admin_cache_clear_subcommand(
         )
         return
     
-    # Extract Slack user ID from mention
+    target_slack_id = None
+
+    # Method 1: Try to extract from mention format <@U12345678> or <@U12345678|Display Name>
     import re
     mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', target_user)
-    
-    if not mention_match:
+
+    if mention_match:
+        target_slack_id = mention_match.group(1)
+        logger.debug(f"admin cache clear: extracted slack_id from mention = '{target_slack_id}'")
+
+    # Method 2: If no mention found but we have a client, try to resolve by username/display name
+    elif client and target_user.startswith('@'):
+        username = target_user[1:].strip()  # Remove the @ prefix
+        logger.debug(f"admin cache clear: trying to resolve username = '{username}'")
+
+        try:
+            # Method 2a: Try to look up user by email using Slack API
+            email_variations = [
+                f"{username}@ggpsystems.co.uk",
+                f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",
+            ]
+
+            for email in email_variations:
+                try:
+                    logger.debug(f"admin cache clear: trying email lookup: {email}")
+                    slack_user_info = await client.users_lookupByEmail(email=email)
+                    if slack_user_info and slack_user_info.get('ok'):
+                        target_slack_id = slack_user_info['user']['id']
+                        logger.debug(f"admin cache clear: resolved via email lookup = '{target_slack_id}'")
+                        break
+                except Exception as e:
+                    logger.debug(f"admin cache clear: email lookup failed for {email}: {e}")
+                    continue
+
+            if not target_slack_id:
+                # Method 2b: Try searching by display name/real name in workspace
+                logger.debug(f"admin cache clear: trying users_list search")
+                users_list = await client.users_list()
+                if users_list and users_list.get('ok'):
+                    search_lower = username.lower()
+                    for user in users_list.get('members', []):
+                        if user.get('is_bot') or user.get('deleted'):
+                            continue
+
+                        profile = user.get('profile', {})
+                        display_name = (profile.get('display_name', '') or '').lower()
+                        real_name = (profile.get('real_name', '') or '').lower()
+                        name = (profile.get('name', '') or '').lower()
+
+                        # Match against various fields (case insensitive, partial matches)
+                        if (search_lower in display_name or
+                            search_lower in real_name or
+                            search_lower in name or
+                            display_name in search_lower or
+                            real_name in search_lower or
+                            name in search_lower):
+                            target_slack_id = user['id']
+                            logger.debug(f"admin cache clear: resolved via display name search = '{target_slack_id}'")
+                            break
+        except Exception as e:
+            logger.debug(f"admin cache clear: Slack API resolution failed: {e}")
+
+    # Method 3: Direct Slack user ID (e.g., U09DB3RLKL4)
+    if not target_slack_id and re.match(r'^[A-Z][A-Z0-9]+$', target_user):
+        target_slack_id = target_user
+        logger.debug(f"admin cache clear: using direct slack_id = '{target_slack_id}'")
+
+    if not target_slack_id:
         await respond(
-            ":x: *Invalid user format*\n"
-            "Please use @mention to specify the user.\n"
-            "Example: `/ggp admin cache clear @john.doe`"
+            ":x: *Could not identify user*\n"
+            f"Received: `{target_user}`\n\n"
+            "Please use @mention to specify the user, or provide a valid Slack user ID.\n"
+            "Examples:\n"
+            "• `/ggp admin cache clear @john.doe`\n"
+            "• `/ggp admin cache clear U12345678`"
         )
         return
-    
-    target_slack_id = mention_match.group(1)
-    
+
     try:
         removed = token_storage.remove_token(target_slack_id, reason="admin_manual_clear")
         
