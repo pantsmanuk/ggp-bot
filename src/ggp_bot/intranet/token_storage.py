@@ -127,16 +127,22 @@ class TokenStorage:
             Configured Fernet instance
         """
         if key:
+            logger.info("TOKEN AUDIT: Encryption initialized from provided key argument")
             return Fernet(key.encode() if isinstance(key, str) else key)
         
         # Try environment variable
         env_key = os.getenv("TOKEN_ENCRYPTION_KEY")
         if env_key:
+            logger.info("TOKEN AUDIT: Encryption initialized from TOKEN_ENCRYPTION_KEY environment variable")
             return Fernet(env_key.encode())
         
         # Fallback: derive key from machine-specific data
         # This allows the bot to work without explicit key configuration
         # but is not suitable for multi-instance deployments
+        logger.warning(
+            "TOKEN AUDIT: Encryption initialized from machine-derived fallback key. "
+            "Set TOKEN_ENCRYPTION_KEY for production multi-instance deployments."
+        )
         return self._derive_key_from_machine()
     
     def _derive_key_from_machine(self) -> Fernet:
