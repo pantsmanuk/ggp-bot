@@ -10,9 +10,8 @@ A modern Slack bot interfacing with the GGP intranet (Laravel 13) via Socket Mod
 
 ```
 src/ggp_bot/
-├── main.py                    # Entry point + app initialization
+├── main.py                    # Entry point + graceful shutdown
 ├── config.py                  # Pydantic Settings (env vars)
-├── errors.py                  # Custom exceptions
 ├── logging_config.py          # Structured logging
 │
 ├── slack/
@@ -20,21 +19,22 @@ src/ggp_bot/
 │   ├── handlers/
 │   │   ├── commands.py        # Slash command handlers
 │   │   └── mentions.py        # @mention handlers (supports @ggp-bot AND @ggpbot)
-│   └── formatters.py          # Slack Block Kit builders
+│   ├── formatters.py          # Slack Block Kit builders
+│   └── lunch_timer.py         # Background lunch reminder service
 │
 ├── intranet/
 │   ├── client.py              # httpx wrapper with Bearer auth
 │   ├── errors.py              # API-specific exceptions
 │   ├── models.py              # Pydantic response models
-│   └── endpoints/
-│       ├── health.py          # /health, /rate-limits
-│       ├── auth.py            # /auth/verify (token validation)
-│       ├── holidays.py        # Full holiday CRUD
-│       ├── users.py           # User profile, search, status
-│       └── directory.py       # Phone directory
+│   ├── token_storage.py       # Encrypted per-user token storage
+│   └── state_tracking.py      # Clock state tracking for #Attendance
+│
+├── jenkins/                   # Future: Jenkins CI/CD integration (v1.1.0)
+│   ├── client.py              # Jenkins API client (stub)
+│   └── __init__.py
 │
 └── utils/
-    └── date_helpers.py        # UK date parsing (DD/MM/YYYY)
+    └── date_parser.py         # UK date parsing (DD/MM/YYYY)
 ```
 
 ---
@@ -45,10 +45,12 @@ src/ggp_bot/
 [project]
 dependencies = [
     "slack-bolt>=1.20",
+    "aiohttp>=3.9",
     "python-dotenv>=1.0",
     "httpx>=0.27",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
+    "cryptography>=42.0",
 ]
 ```
 
@@ -57,17 +59,22 @@ dependencies = [
 ## Environment Variables
 
 ```bash
-# Slack (to be configured in future session)
+# Slack
 SLACK_BOT_TOKEN=xoxb-...           # Bot User OAuth Token
 SLACK_SIGNING_SECRET=...            # Request verification
 SLACK_APP_TOKEN=xapp-...            # Socket Mode connection
 
-# Intranet (token available when you have access)
-INTRANET_BASE_URL=https://intranet.ggpsystems.co.uk/api
+# Intranet
+INTRANET_BASE_URL=https://intranet.ggpsystems.co.uk
 INTRANET_API_TOKEN=...              # Sanctum Bearer token
 
+# Security (generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+TOKEN_ENCRYPTION_KEY=...            # Fernet key for user token encryption
+
 # Bot
-LOG_LEVEL=INFO
+LOG_LEVEL=INFO                       # DEBUG, INFO, WARNING, ERROR
+LOG_FILE=/var/log/ggp-bot/ggp-bot.log  # Optional: file logging path
+DATA_DIR=/var/lib/ggp-bot           # Data directory for SQLite databases
 ```
 
 ---
@@ -188,19 +195,19 @@ LOG_LEVEL=INFO
 | 4.4 `/ggp directory search <query>` | `slack/handlers/commands.py` | ✅ Searches by name/email/dept |
 | 4.5 `/ggp directory list` | `slack/handlers/commands.py` | ✅ Lists all users |
 | 4.6 User formatters | `slack/formatters.py` | ✅ Profile display |
-| 4.7 @mention handlers | `slack/handlers/mentions.py` | ⏳ v1.0.0 - Natural language processing |
+| 4.7 @mention handlers | `slack/handlers/mentions.py` | ✅ Natural language processing |
 
-### Sprint 4b: Natural Language @mentions ⏳ v1.0.0
+### Sprint 4b: Natural Language @mentions ✅ Complete (v1.0.0)
 
 **Goal**: Conversational interactions via @mentions
 
 | Task | File(s) | Status |
 |------|---------|--------|
-| 4b.1 Intent parsing | `slack/handlers/mentions.py` | ⏳ Pattern matching for intents |
-| 4b.2 Holiday queries | `slack/handlers/mentions.py` | ⏳ "@ggp-bot show my holidays" |
-| 4b.3 Directory queries | `slack/handlers/mentions.py` | ⏳ "@ggp-bot who is @user" |
-| 4b.4 Clock queries | `slack/handlers/mentions.py` | ⏳ "@ggp-bot am I clocked in?" |
-| 4b.5 Help/fallback | `slack/handlers/mentions.py` | ⏳ Unknown intent handling |
+| 4b.1 Intent parsing | `slack/handlers/mentions.py` | ✅ Pattern matching for 8 intents |
+| 4b.2 Holiday queries | `slack/handlers/mentions.py` | ✅ "@ggp-bot show my holidays" |
+| 4b.3 Directory queries | `slack/handlers/mentions.py` | ✅ "@ggp-bot who is @user" |
+| 4b.4 Clock queries | `slack/handlers/mentions.py` | ✅ "@ggp-bot am I clocked in?" |
+| 4b.5 Help/fallback | `slack/handlers/mentions.py` | ✅ Unknown intent handling |
 
 ---
 
@@ -217,15 +224,6 @@ LOG_LEVEL=INFO
 | 5.5 Lunch timer | `slack/lunch_timer.py` | ✅ 1-hour timer with DM reminders at 55/59/60 min |
 | 5.6 State tracking | `intranet/state_tracking.py` | ✅ Prevents duplicate #Attendance posts |
 
-### Sprint 6: Jenkins CI/CD ⏳ v1.1.0
-
-**Goal**: Jenkins integration for build/deployment operations
-
-**Status**: Deferred until bot is stable in production
-**Rationale**: Want production use and stability before adding Jenkins automation
-
----
-
 ### Sprint 6: Production Readiness ✅ Complete (v1.0.0)
 
 **Goal**: systemd service, graceful shutdown, comprehensive error handling
@@ -235,8 +233,17 @@ LOG_LEVEL=INFO
 | 6.1 Signal handling | `main.py` | ✅ SIGTERM graceful shutdown |
 | 6.2 Graceful shutdown | `slack/app.py` | ✅ Lunch timer cleanup on exit |
 | 6.3 systemd service | `deploy/ggp-bot.service` | ✅ Ubuntu 24.04 service unit |
-| 6.4 Deployment docs | `DEPLOY.md` | ⏳ Step-by-step setup guide |
-| 6.5 Integration tests | `tests/integration/` | ⏳ Holiday + clock tests |
+| 6.4 Deployment docs | `DEPLOY.md` | ✅ Step-by-step setup guide |
+| 6.5 Health check tests | `tests/test_health.py` | ✅ Basic health tests |
+
+---
+
+### Sprint 7: Jenkins CI/CD ⏳ v1.1.0 (Future)
+
+**Goal**: Jenkins integration for build/deployment operations
+
+**Status**: Deferred until bot is stable in production
+**Rationale**: Want production use and stability before adding Jenkins automation
 
 ---
 
@@ -246,19 +253,22 @@ LOG_LEVEL=INFO
 **Status**: Feature complete and running in production
 
 **Features delivered**:
-- ✅ Consolidated slash commands (`/ggp` interface)
-- ✅ Holiday management (balance, list, book, cancel)
-- ✅ User directory search (`/ggp whois`, `/ggp directory`)
+- ✅ Consolidated slash commands (`/ggp` interface) with "did you mean?" suggestions
+- ✅ Holiday management (balance, list, book, cancel with batch/range support)
+- ✅ User directory search (`/ggp whois`, `/ggp directory search`, `/ggp directory list`)
 - ✅ Time clock integration with #Attendance posting
-- ✅ Lunch timer with background reminders
-- ✅ Natural language @mention handlers
+- ✅ Lunch timer with background DM reminders (55/59/60 min)
+- ✅ Natural language @mention handlers (8 intent patterns)
+- ✅ Graceful shutdown with signal handling (SIGINT/SIGTERM)
 - ✅ systemd service for production deployment
 - ✅ Configurable file logging
-- ✅ Secure per-user token storage
+- ✅ Secure per-user token storage with Fernet encryption
+- ✅ Context-aware help system
 
-**Optional remaining**:
-- ⏳ DEPLOY.md documentation (operational notes)
-- ⏳ Expanded integration tests
+**Completed documentation**:
+- ✅ DEPLOY.md - Complete deployment guide with Ubuntu 24.04 setup
+- ✅ README.md - User-facing command reference
+- ✅ implementation.md - Technical architecture and sprint history
 
 ### v1.1.0 (Future)
 **Focus**: Jenkins CI/CD integration (Sprint 7)
@@ -267,14 +277,14 @@ LOG_LEVEL=INFO
 
 ## Testing Strategy
 
-### Integration Tests (Primary)
+### Automated Tests
 
 ```bash
-# Run all integration tests (requires real intranet)
-pytest -m integration
+# Run health check tests (requires real intranet connectivity)
+python tests/test_health.py
 
-# Run specific suite
-pytest tests/integration/test_holidays.py -v
+# Or using pytest
+pytest tests/test_health.py -v
 ```
 
 ### Manual Testing
@@ -283,16 +293,18 @@ pytest tests/integration/test_holidays.py -v
 # 1. Install
 pip install -e .
 
-# 2. Configure (when you have tokens)
+# 2. Configure
 cp .env.example .env
-# ... edit .env ...
+# ... edit .env with tokens ...
 
-# 3. Run
+# 3. Run locally
 ggp-bot
 
 # 4. Test in Slack
 /ggp ping
 /ggp status
+/ggp connect your.email@ggpsystems.co.uk yourpassword
+/ggp whoami
 ```
 
 ---
@@ -305,23 +317,47 @@ ggp-bot
 | **Bot Handles** | `@ggp-bot` (primary) + `@ggpbot` (alias for migration) |
 | **Interaction Modes** | Slash commands + @mentions (both from start) |
 | **Error Transparency** | Specific, detailed error messages (dev-friendly) |
-| **Testing** | Integration tests against real intranet API |
+| **Testing** | Health check tests, manual integration testing against real API |
 | **Deployment** | systemd service on Ubuntu 24.04 |
-| **Contexts** | DMs initially, channels (including #attendance) in Phase 2 |
-| **Phase 2 Scope** | Jenkins integration (deferred until Phase 1 stable) |
+| **Contexts** | DMs and channels (including #attendance) |
+| **Token Security** | Per-user Fernet encryption in SQLite database |
+| **v1.1.0 Scope** | Jenkins CI/CD integration (deferred for stability) |
 
 ---
 
-## Prerequisites for Sprint 1
+## Production Deployment Prerequisites
 
-- [ ] Slack app created with Bot Token, Signing Secret, App Token
-- [ ] Intranet API token in `.env`
-- [ ] This plan reviewed and confirmed
+For deploying to production (see `DEPLOY.md` for full details):
+
+- [x] Slack app created with Bot Token, Signing Secret, App Token
+- [x] Intranet API token configured
+- [x] Ubuntu 24.04 server with systemd
+- [x] `TOKEN_ENCRYPTION_KEY` generated for user token security
+- [x] `DATA_DIR` and `LOG_FILE` paths configured
 
 ---
 
-## Next Steps
+## Development History
 
-1. Set up Slack app (when ready), obtain intranet API token
-2. Begin Sprint 1 implementation
-3. Sprint-by-sprint delivery with integration testing
+This bot was developed through 6 sprints over approximately 4 days:
+
+1. **Sprint 1**: Core Slack app with Socket Mode, basic `/ping` command
+2. **Sprint 2**: Intranet HTTP client with Bearer auth, error handling
+3. **Sprint 3**: Full holiday management (balance, list, book, cancel)
+4. **Sprint 4**: User directory, profiles, and natural language @mentions
+5. **Sprint 5**: Time clock integration with #Attendance posting, lunch timer
+6. **Sprint 6**: Production readiness - systemd service, graceful shutdown
+
+---
+
+## Future Work
+
+**v1.1.0**: Jenkins CI/CD integration (Sprint 7)
+- Build/deployment automation via Slack commands
+- Pipeline status monitoring
+- Job triggering and log retrieval
+
+**Potential future enhancements**:
+- Expanded integration test coverage
+- @mention conversational booking ("book me off next Friday")
+- Notification system for holiday approvals
