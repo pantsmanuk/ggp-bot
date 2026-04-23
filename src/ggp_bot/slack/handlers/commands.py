@@ -26,6 +26,7 @@ from ggp_bot.intranet.errors import (
     IntranetSlackNotLinkedError,
 )
 from ggp_bot.intranet.token_storage import token_storage
+from ggp_bot.db_cleanup.scheduler import cleanup_scheduler
 from ggp_bot.utils.date_parser import parse_holiday_request
 
 
@@ -204,6 +205,24 @@ CLOCK_SUBCOMMANDS = {
     },
 }
 
+ADMIN_SUBCOMMANDS = {
+    "cache": {
+        "description": "Token cache management",
+        "requires_auth": True,
+        "params": "<clear|status>",
+    },
+    "gc": {
+        "description": "Garbage collection control",
+        "requires_auth": True,
+        "params": "<status|run>",
+    },
+    "integrity": {
+        "description": "Database integrity checking",
+        "requires_auth": True,
+        "params": "<check>",
+    },
+}
+
 
 def _get_all_command_names() -> list[str]:
     """Get list of all valid command names for suggestion matching."""
@@ -217,6 +236,9 @@ def _get_all_command_names() -> list[str]:
     # Add clock subcommands as 'clock <subcmd>'
     for subcmd in CLOCK_SUBCOMMANDS.keys():
         names.append(f"clock {subcmd}")
+    # Add admin subcommands as 'admin <subcmd>'
+    for subcmd in ADMIN_SUBCOMMANDS.keys():
+        names.append(f"admin {subcmd}")
     return names
 
 
@@ -415,6 +437,28 @@ async def _handle_help_subcommand(
             await respond(help_text)
             return
         
+        # Check for admin as a top-level help topic
+        if topic_lower == "admin":
+            help_text = (
+                "*/ggp admin [subcommand]*\n"
+                "Administrative commands for bot management.\n\n"
+                "*Subcommands:*\n"
+                "• cache clear <@user> - Remove user from token cache\n"
+                "• cache status - Show token cache statistics\n"
+                "• gc status - Show GC schedule and last run\n"
+                "• gc run - Manually trigger garbage collection\n"
+                "• integrity check - Validate all databases\n\n"
+                "*Examples:*\n"
+                "• /ggp admin cache clear @john.doe\n"
+                "• /ggp admin cache status\n"
+                "• /ggp admin gc status\n"
+                "• /ggp admin gc run\n"
+                "• /ggp admin integrity check\n\n"
+                "_Note: Admin commands require a linked account._"
+            )
+            await respond(help_text)
+            return
+        
         # Unknown topic
         await respond(
             f":warning: Unknown command '{topic}'.\n"
@@ -448,6 +492,10 @@ async def _handle_help_subcommand(
         lines.append("\n*Clock commands:*")
         for name, meta in CLOCK_SUBCOMMANDS.items():
             lines.append(_format_command_help(f"clock {name}", meta))
+        
+        lines.append("\n*Admin commands:*")
+        for name, meta in ADMIN_SUBCOMMANDS.items():
+            lines.append(_format_command_help(f"admin {name}", meta))
         
         lines.append(
             "\n*Examples:*\n"
@@ -1978,6 +2026,304 @@ async def _handle_clock_subcommand(
 
 
 # ============================================================================
+# Admin Subcommand Handlers
+# ============================================================================
+
+async def _handle_admin_cache_clear_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle admin cache clear - remove specific user from token cache."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond, slack_user_id)
+        return
+    
+    target_user = args.strip()
+    
+    if not target_user:
+        await respond(
+            ":warning: *Usage:* `/ggp admin cache clear <@user>`\n"
+            "Example: `/ggp admin cache clear @john.doe`"
+        )
+        return
+    
+    # Extract Slack user ID from mention
+    import re
+    mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', target_user)
+    
+    if not mention_match:
+        await respond(
+            ":x: *Invalid user format*\n"
+            "Please use @mention to specify the user.\n"
+            "Example: `/ggp admin cache clear @john.doe`"
+        )
+        return
+    
+    target_slack_id = mention_match.group(1)
+    
+    try:
+        removed = token_storage.remove_token(target_slack_id, reason="admin_manual_clear")
+        
+        if removed:
+            logger.info(f"ADMIN: User {slack_user_id} cleared token cache for user {target_slack_id}")
+            await respond(
+                f":white_check_mark: *Token cache cleared*\n"
+                f"Removed token for user <@{target_slack_id}> from cache."
+            )
+        else:
+            await respond(
+                f":warning: *No token found*\n"
+                f"User <@{target_slack_id}> was not in the token cache."
+            )
+            
+    except Exception as e:
+        logger.error(f"ADMIN: Failed to clear token cache for {target_slack_id}: {e}")
+        await respond(f":x: Failed to clear token cache: {e}")
+
+
+async def _handle_admin_cache_status_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle admin cache status - show token cache statistics."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond, slack_user_id)
+        return
+    
+    try:
+        stats = token_storage.get_stats()
+        
+        lines = ["*Token Cache Status* :key:"]
+        lines.append(f"• Total tokens: {stats.get('total_tokens', 0)}")
+        lines.append(f"• Database: {stats.get('db_path', 'N/A')}")
+        lines.append(f"• Encrypted: {'Yes' if stats.get('encrypted') else 'No'}")
+        
+        await respond("\n".join(lines))
+        
+    except Exception as e:
+        logger.error(f"ADMIN: Failed to get cache status: {e}")
+        await respond(f":x: Failed to get cache status: {e}")
+
+
+async def _handle_admin_gc_status_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle admin gc status - show GC schedule and last run."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond, slack_user_id)
+        return
+    
+    try:
+        status = cleanup_scheduler.get_status()
+        
+        running = "Yes" if status.get('running') else "No"
+        last_run = status.get('last_run', 'Never')
+        last_status = status.get('last_status', 'N/A')
+        next_run = status.get('next_run', 'Unknown')
+        next_in = status.get('next_run_in_seconds', 0)
+        
+        lines = ["*Garbage Collection Status* :broom:"]
+        lines.append(f"• Running: {running}")
+        lines.append(f"• Last run: {last_run}")
+        lines.append(f"• Last status: {last_status}")
+        lines.append(f"• Next run: {next_run}")
+        
+        if next_in > 0:
+            hours = next_in / 3600
+            lines.append(f"• Next run in: {hours:.1f} hours")
+        
+        await respond("\n".join(lines))
+        
+    except Exception as e:
+        logger.error(f"ADMIN: Failed to get GC status: {e}")
+        await respond(f":x: Failed to get GC status: {e}")
+
+
+async def _handle_admin_gc_run_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle admin gc run - manually trigger garbage collection."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond, slack_user_id)
+        return
+    
+    logger.info(f"ADMIN: User {slack_user_id} triggered manual GC run")
+    
+    # Respond immediately to avoid timeout, then run the cleanup
+    await respond("🧹 *Running garbage collection...* (this may take a moment)")
+    
+    try:
+        results = await cleanup_scheduler.run_now()
+        
+        lines = ["*Garbage Collection Complete* :white_check_mark:"]
+        lines.append(f"• Lunch timers removed: {results.get('lunch_timers_removed', 0)}")
+        lines.append(f"• Timeclock records removed: {results.get('timeclock_records_removed', 0)}")
+        
+        token_audit = results.get('token_audit', {})
+        valid = token_audit.get('valid', 0)
+        warnings = token_audit.get('warnings', 0)
+        errors = token_audit.get('errors', 0)
+        lines.append(f"• Token audit: {valid} valid, {warnings} warnings, {errors} errors")
+        
+        duration = results.get('duration_seconds', 0)
+        lines.append(f"• Duration: {duration:.2f}s")
+        
+        await respond("\n".join(lines))
+        
+    except Exception as e:
+        logger.error(f"ADMIN: Manual GC run failed: {e}")
+        await respond(f":x: Garbage collection failed: {e}")
+
+
+async def _handle_admin_integrity_check_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Handle admin integrity check - validate all databases."""
+    if not _check_user_linked(slack_user_id):
+        await _handle_not_linked(respond, slack_user_id)
+        return
+    
+    logger.info(f"ADMIN: User {slack_user_id} triggered integrity check")
+    
+    await respond("🔍 *Running database integrity check...* (this may take a moment)")
+    
+    try:
+        # Validate token cache
+        token_results = token_storage.validate_all_tokens()
+        
+        lines = ["*Database Integrity Check* :mag:"]
+        lines.append("\n*Token Cache:*")
+        lines.append(f"• Total tokens: {token_results.get('total', 0)}")
+        lines.append(f"• Valid: {token_results.get('valid', 0)} :white_check_mark:")
+        lines.append(f"• Warnings: {token_results.get('warnings', 0)} :warning:")
+        lines.append(f"• Errors: {token_results.get('errors', 0)} :x:")
+        
+        # Show details if there are issues
+        details = token_results.get('details', [])
+        if details:
+            lines.append("\n*Issues Found:*")
+            for detail in details[:5]:  # Show first 5
+                user_id = detail.get('user_id', 'unknown')
+                issues = detail.get('issues', [])
+                lines.append(f"• <@{user_id}>: {', '.join(issues)}")
+            if len(details) > 5:
+                lines.append(f"• ... and {len(details) - 5} more")
+        
+        await respond("\n".join(lines))
+        
+    except Exception as e:
+        logger.error(f"ADMIN: Integrity check failed: {e}")
+        await respond(f":x: Integrity check failed: {e}")
+
+
+async def _handle_admin_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None
+) -> None:
+    """Dispatch admin subcommands to their handlers.
+    
+    Args:
+        respond: Slack respond function
+        slack_user_id: The Slack user ID
+        args: Subcommand and arguments (e.g., "cache clear @user")
+        client: Optional Slack WebClient
+    """
+    # Parse the admin subcommand
+    parts = args.strip().split(None, 2)
+    subcommand = parts[0].lower() if parts else ""
+    sub_args = " ".join(parts[1:]) if len(parts) > 1 else ""
+    
+    if subcommand == "cache":
+        # Parse cache sub-subcommand
+        cache_parts = sub_args.split(None, 1)
+        cache_cmd = cache_parts[0].lower() if cache_parts else ""
+        cache_args = cache_parts[1] if len(cache_parts) > 1 else ""
+        
+        if cache_cmd == "clear":
+            await _handle_admin_cache_clear_subcommand(respond, slack_user_id, cache_args, client)
+        elif cache_cmd == "status":
+            await _handle_admin_cache_status_subcommand(respond, slack_user_id, client)
+        else:
+            await respond(
+                f":warning: Unknown cache command '{cache_cmd}'.\n\n"
+                f"*Available cache commands:*\n"
+                f"• /ggp admin cache clear <@user> - Remove user from token cache\n"
+                f"• /ggp admin cache status - Show token cache statistics\n\n"
+                f"Run `/ggp help admin` for more details."
+            )
+    
+    elif subcommand == "gc":
+        # Parse gc sub-subcommand
+        gc_parts = sub_args.split(None, 1)
+        gc_cmd = gc_parts[0].lower() if gc_parts else ""
+        
+        if gc_cmd == "status":
+            await _handle_admin_gc_status_subcommand(respond, slack_user_id, client)
+        elif gc_cmd == "run":
+            await _handle_admin_gc_run_subcommand(respond, slack_user_id, client)
+        else:
+            await respond(
+                f":warning: Unknown gc command '{gc_cmd}'.\n\n"
+                f"*Available gc commands:*\n"
+                f"• /ggp admin gc status - Show GC schedule and last run\n"
+                f"• /ggp admin gc run - Manually trigger garbage collection\n\n"
+                f"Run `/ggp help admin` for more details."
+            )
+    
+    elif subcommand == "integrity":
+        # Parse integrity sub-subcommand
+        integrity_parts = sub_args.split(None, 1)
+        integrity_cmd = integrity_parts[0].lower() if integrity_parts else ""
+        
+        if integrity_cmd == "check":
+            await _handle_admin_integrity_check_subcommand(respond, slack_user_id, client)
+        else:
+            await respond(
+                f":warning: Unknown integrity command '{integrity_cmd}'.\n\n"
+                f"*Available integrity commands:*\n"
+                f"• /ggp admin integrity check - Validate all databases\n\n"
+                f"Run `/ggp help admin` for more details."
+            )
+    
+    else:
+        # Unknown admin subcommand
+        valid_subcommands = list(ADMIN_SUBCOMMANDS.keys())
+        suggestion = _suggest_command(subcommand, [f"admin {cmd}" for cmd in valid_subcommands])
+        
+        if suggestion:
+            suggestion_clean = suggestion.replace("admin ", "")
+            await respond(
+                f":warning: Unknown admin command '{subcommand}'.\n"
+                f"Did you mean: `admin {suggestion_clean}`?\n\n"
+                f"*Available admin commands:*\n"
+                f"• /ggp admin cache <clear|status> - Token cache management\n"
+                f"• /ggp admin gc <status|run> - Garbage collection control\n"
+                f"• /ggp admin integrity check - Database integrity checking\n\n"
+                f"Run `/ggp help admin` for more details."
+            )
+        else:
+            await respond(
+                f":warning: Unknown admin command '{subcommand}'.\n\n"
+                f"*Available admin commands:*\n"
+                f"• /ggp admin cache <clear|status> - Token cache management\n"
+                f"• /ggp admin gc <status|run> - Garbage collection control\n"
+                f"• /ggp admin integrity check - Database integrity checking\n\n"
+                f"Run `/ggp help admin` for more details."
+            )
+
+
+# ============================================================================
 # Main Command Router
 # ============================================================================
 
@@ -2027,6 +2373,8 @@ async def handle_ggp_command(
         await _handle_directory_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "clock":
         await _handle_clock_subcommand(respond, slack_user_id, args, client)
+    elif subcommand == "admin":
+        await _handle_admin_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "help":
         await _handle_help_subcommand(respond, slack_user_id, args)
     else:

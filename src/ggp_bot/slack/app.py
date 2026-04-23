@@ -10,6 +10,7 @@ from ggp_bot.config import settings
 from ggp_bot.slack.handlers.commands import handle_ggp_command
 from ggp_bot.slack.handlers.mentions import handle_mention
 from ggp_bot.slack.lunch_timer import lunch_timer_manager
+from ggp_bot.db_cleanup.scheduler import cleanup_scheduler
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,10 @@ async def start_app(shutdown_event: asyncio.Event | None = None) -> None:
     # Use app.client which is available after handler starts
     logger.info("Starting lunch timer background task...")
     lunch_timer_manager.start_background_task(app.client)
+    
+    # Start the database cleanup scheduler
+    logger.info("Starting database cleanup scheduler...")
+    cleanup_scheduler.start()
     
     # Start the handler
     logger.info("Starting Slack Socket Mode handler...")
@@ -94,6 +99,10 @@ async def shutdown_app() -> None:
     # Stop the lunch timer background task
     logger.info("Stopping lunch timer background task...")
     lunch_timer_manager.stop_background_task()
+    
+    # Stop the database cleanup scheduler
+    logger.info("Stopping database cleanup scheduler...")
+    cleanup_scheduler.stop()
     
     if _handler:
         logger.debug("Stopping Slack Socket Mode handler...")
