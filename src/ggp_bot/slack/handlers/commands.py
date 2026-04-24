@@ -1099,14 +1099,19 @@ async def _handle_holiday_list_subcommand(
             
             for h in holidays:
                 from datetime import date
-                holiday_date = date.fromisoformat(h.start_date) if isinstance(h.start_date, str) else h.start_date
-                is_future = holiday_date >= date.today()
                 
-                # Use palm tree for future holidays, otherwise approval-based emoji
-                if is_future:
+                # Determine holiday timing relative to today
+                end_date = date.fromisoformat(h.end_date) if isinstance(h.end_date, str) else h.end_date
+                today = date.today()
+                is_future_or_current = end_date >= today  # Future or currently being taken
+                
+                # Select emoji: pending -> hourglass, approved+future/current -> palm_tree, approved+past -> checkmark
+                if not h.approved:
+                    status_emoji = ":hourglass_flowing_sand:"
+                elif is_future_or_current:
                     status_emoji = ":palm_tree:"
                 else:
-                    status_emoji = ":white_check_mark:" if h.approved else ":hourglass_flowing_sand:"
+                    status_emoji = ":white_check_mark:"
                 
                 # Format display based on holiday type
                 date_display = _format_holiday_dates(h)
