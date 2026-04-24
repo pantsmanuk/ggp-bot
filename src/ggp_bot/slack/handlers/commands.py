@@ -1763,7 +1763,7 @@ async def _handle_clock_in_out_subcommand(
             confirmation = format_clock_confirmation(event_type, note)
             await respond(confirmation)
             
-    except IntranetAuthError:
+    except IntranetAuthError as e:
         logger.error(f"Authentication failed for user {slack_user_id} during clock {event_type}: {e}")
         await respond(
             ":x: *Authentication Failed*\n"
@@ -1934,7 +1934,11 @@ async def _handle_clock_lunch_subcommand(
             user = await intranet.get_user_by_slack_id(slack_user_id)
             
             # Clock out via API
-            await intranet.clock_event("out", "Lunch break")
+            result = await intranet.clock_event("out", "Lunch break")
+            
+            # Update local state tracker for idempotent #Attendance posting
+            from ggp_bot.intranet.state_tracking import timeclock_tracker
+            timeclock_tracker.update_state(slack_user_id, "out", result.get('id', 0))
             
             # Start lunch timer
             # Get the DM channel ID for sending reminders
@@ -1948,7 +1952,7 @@ async def _handle_clock_lunch_subcommand(
                 return
             
             # Send confirmation via respond (same as other clock commands)
-            await respond("You started *lunch*.")
+            await respond(":pizza: You started *lunch*")
             
             # Post to #Attendance
             try:
