@@ -1,4 +1,4 @@
-"""Intranet API client for GGP Laravel backend - aligned with API v0.99.5.
+"""Intranet API client for GGP Laravel backend - aligned with API v1.0.0.
 
 This client supports both bot-level authentication (for public endpoints) and
 per-user authentication (for user-specific endpoints). After a user links their
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class IntranetClient:
-    """HTTP client for GGP intranet API v0.99.5+.
+    """HTTP client for GGP intranet API v1.0.0+.
     
     Supports both global bot token (for health checks, public info) and
     per-user tokens (for user-specific operations like holiday requests).
@@ -40,7 +40,7 @@ class IntranetClient:
     """
     
     # API version alignment
-    API_VERSION = "v0.99.5"
+    API_VERSION = "v1.0.0"
     BOT_VERSION = "0.4.0"
     
     # Track active client instances for graceful shutdown

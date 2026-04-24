@@ -1,4 +1,4 @@
-"""Custom exceptions for intranet API errors - v0.99.5 format.
+"""Custom exceptions for intranet API errors - v1.0.0 format.
 
 This module defines exceptions that map to the standardized API error response
 codes from the Laravel intranet. All errors follow the format:

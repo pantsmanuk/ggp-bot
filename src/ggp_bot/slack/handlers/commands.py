@@ -1,4 +1,4 @@
-"""Slack slash command handlers - aligned with API v0.99.5.
+"""Slack slash command handlers - aligned with API v1.0.0.
 
 This module handles all Slack slash commands through a consolidated /ggp interface.
 User-specific commands use per-user authentication via stored tokens obtained 
@@ -807,7 +807,7 @@ async def _handle_whoami_subcommand(
     
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
-            # Use the new by-slack-id endpoint (API v0.99.6)
+            # Use the new by-slack-id endpoint (API v1.0.0)
             user = await intranet.get_user_by_slack_id(slack_user_id)
             
             lines = [f"*Your Profile* :bust_in_silhouette:"]

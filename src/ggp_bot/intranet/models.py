@@ -1,4 +1,4 @@
-"""Pydantic models for intranet API responses - v0.99.5."""
+"""Pydantic models for intranet API responses - v1.0.0."""
 
 from datetime import datetime
 from typing import Any
