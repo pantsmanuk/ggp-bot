@@ -645,7 +645,8 @@ async def _handle_status_subcommand(
             await respond(
                 f"{status_emoji} *Intranet API Status*\n"
                 f"• Status: {health.status}\n"
-                f"• Version: {health.version}\n"
+                f"• API Version: {health.version}\n"
+                f"• Bot Version: v{IntranetClient.BOT_VERSION}\n"
                 f"• Last checked: {health.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') if health.timestamp else 'N/A'}"
             )
         except IntranetError as e:
