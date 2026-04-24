@@ -41,7 +41,7 @@ class IntranetClient:
     
     # API version alignment
     API_VERSION = "v1.0.0"
-    BOT_VERSION = "0.4.0"
+    BOT_VERSION = "1.0.0"
     
     # Track active client instances for graceful shutdown
     _active_clients: set["IntranetClient"] = set()
