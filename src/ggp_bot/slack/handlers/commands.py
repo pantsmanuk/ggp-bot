@@ -1098,7 +1098,15 @@ async def _handle_holiday_list_subcommand(
             lines = ["*Your Holiday Requests* :calendar:"]
             
             for h in holidays:
-                status_emoji = ":white_check_mark:" if h.approved else ":hourglass_flowing_sand:"
+                from datetime import date
+                holiday_date = date.fromisoformat(h.start_date) if isinstance(h.start_date, str) else h.start_date
+                is_future = holiday_date >= date.today()
+                
+                # Use palm tree for future holidays, otherwise approval-based emoji
+                if is_future:
+                    status_emoji = ":palm_tree:"
+                else:
+                    status_emoji = ":white_check_mark:" if h.approved else ":hourglass_flowing_sand:"
                 
                 # Format display based on holiday type
                 date_display = _format_holiday_dates(h)
