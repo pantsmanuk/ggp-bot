@@ -1,7 +1,7 @@
 # ggp-bot
 
-**Version:** 1.0.1
-**API Compatibility:** GGP Intranet API v1.0.0
+**Version:** 1.0.1  
+**API Compatibility:** GGP Intranet API v1.0.0  
 **Status:** ✅ Running in production
 
 Slack bot for GGP intranet integration via slash commands and @mentions. Supports holidays, time clock, directory search, and natural language queries. Jenkins integration planned for v1.1.0.
