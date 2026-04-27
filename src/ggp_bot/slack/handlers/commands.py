@@ -750,6 +750,19 @@ async def _handle_connect_subcommand(
                 token_data = result.get("data", {}).get("token", {})
                 scopes = token_data.get("scopes", [])
                 
+                # IMPORTANT: Verify the token to get the actual scopes from API
+                # The initial link response may have incomplete/incorrect scopes
+                try:
+                    async with await IntranetClient.for_user(slack_user_id) as verify_client:
+                        # for_user() automatically verifies and updates stored scopes
+                        actual_scopes = verify_client.scopes
+                        logger.info(f"Token verified after connect for {slack_user_id}, actual scopes: {actual_scopes}")
+                        # Use actual scopes for display
+                        scopes = actual_scopes
+                except Exception as e:
+                    logger.warning(f"Could not verify token immediately after connect for {slack_user_id}: {e}")
+                    # Continue with scopes from link response - they'll be corrected on first whoami use
+                
                 scope_text = ""
                 if scopes:
                     scope_text = f"\n• Permissions granted: {', '.join(scopes[:5])}"
