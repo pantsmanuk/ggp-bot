@@ -40,8 +40,8 @@ class IntranetClient:
     """
     
     # API version alignment
-    API_VERSION = "v1.0.0"
-    BOT_VERSION = "1.0.0"
+    API_VERSION = "1.0.0"
+    BOT_VERSION = "1.0.1"
     
     # Track active client instances for graceful shutdown
     _active_clients: set["IntranetClient"] = set()
@@ -508,9 +508,11 @@ class IntranetClient:
         logger.debug(f"api_token from response_data: {api_token is not None}")
         
         if api_token and data.get("success", False):
-            # Scopes may be in response_data.scopes or we use defaults
-            scopes = response_data.get("scopes", [])
-            expires_at = response_data.get("expires_at")
+            # Scopes are nested under the token object in the API response
+            # API returns: data.token.scopes (not data.scopes)
+            token_data = response_data.get("token", {})
+            scopes = token_data.get("scopes", [])
+            expires_at = token_data.get("expires_at")
             
             logger.debug(f"Extracted api_token: {api_token[:10]}... if present, scopes: {scopes}")
             
