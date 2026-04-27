@@ -1,6 +1,6 @@
 # ggp-bot
 
-**Version:** 1.0.1  
+**Version:** 1.0.2  
 **API Compatibility:** GGP Intranet API v1.0.0  
 **Status:** ✅ Running in production
 
@@ -180,6 +180,8 @@ See the intranet API documentation at https://intranet.ggpsystems.co.uk/docs for
 
 ## Version History
 
+- **1.0.2** - Bug fix: `/ggp connect` now properly verifies and caches token scopes immediately after account linking (previously required running `/ggp whoami` first)
+- **1.0.1** - Patch release with bug fixes
 - **1.0.0** - Initial stable release: Complete Slack bot for GGP intranet integration with holiday management, time clock, directory search, natural language @mentions, admin tools, and secure encrypted token storage
 - **0.6.0** - Consolidated slash commands into single `/ggp` interface with subcommands, added context-aware help and "did you mean?" suggestions
 - **0.5.0** - Secure per-user token storage with SQLite + Fernet encryption, two-level authentication (bot + user tokens), improved scope-based error handling
