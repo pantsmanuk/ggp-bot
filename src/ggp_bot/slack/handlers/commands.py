@@ -1986,9 +1986,14 @@ async def _handle_clock_lunch_subcommand(
             
             # Post to #Attendance
             try:
+                from ggp_bot.slack.formatters import format_attendance_message
+                event_timestamp = result.get('event')
+                attendance_msg = format_attendance_message(
+                    user.name, "lunch", timestamp=event_timestamp
+                )
                 await client.chat_postMessage(
                     channel="#Attendance",
-                    text=f"{user.name} started *lunch*."
+                    text=attendance_msg
                 )
             except Exception as e:
                 # Log but don't fail

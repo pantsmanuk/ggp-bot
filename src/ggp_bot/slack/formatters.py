@@ -306,7 +306,7 @@ def format_attendance_message(
 
     Args:
         user_name: The user's display name
-        event_type: "in" or "out"
+        event_type: "in", "out", or "lunch"
         note: Optional note
         timestamp: Optional ISO 8601 timestamp for clock emoji
 
@@ -318,8 +318,17 @@ def format_attendance_message(
     if timestamp:
         clock_emoji = _get_clock_emoji_for_time(timestamp)
 
-    bold_type = "*in*" if event_type == "in" else "*out*"
-    text = f"{clock_emoji} {user_name} clocked {bold_type}"
+    if event_type == "in":
+        bold_type = "*in*"
+        text = f"{clock_emoji} {user_name} clocked {bold_type}"
+    elif event_type == "out":
+        bold_type = "*out*"
+        text = f"{clock_emoji} {user_name} clocked {bold_type}"
+    elif event_type == "lunch":
+        text = f"{clock_emoji} {user_name} started *lunch*"
+    else:
+        # Fallback for unknown event types
+        text = f"{clock_emoji} {user_name} {event_type}"
 
     if note:
         text += f" _({note})_"
