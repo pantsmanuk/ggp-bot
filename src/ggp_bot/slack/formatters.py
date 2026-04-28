@@ -325,7 +325,8 @@ def format_attendance_message(
         bold_type = "*out*"
         text = f"{clock_emoji} {user_name} clocked {bold_type}"
     elif event_type == "lunch":
-        text = f"{clock_emoji} {user_name} started *lunch*"
+        bold_type = "*lunch*"
+        text = f"{clock_emoji} {user_name} started {bold_type}"
     else:
         # Fallback for unknown event types
         text = f"{clock_emoji} {user_name} {event_type}"
