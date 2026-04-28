@@ -1762,7 +1762,11 @@ async def _handle_clock_in_out_subcommand(
             if should_post:
                 # Post to #Attendance channel
                 from ggp_bot.slack.formatters import format_attendance_message
-                attendance_msg = format_attendance_message(user.name, event_type, note)
+                # Get timestamp from result for clock emoji (API uses 'event' field)
+                event_timestamp = result.get('event')
+                attendance_msg = format_attendance_message(
+                    user.name, event_type, note, timestamp=event_timestamp
+                )
                 
                 try:
                     await client.chat_postMessage(
