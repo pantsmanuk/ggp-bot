@@ -4,9 +4,83 @@ This module provides Block Kit builders for formatting time cards,
 status displays, and other rich Slack messages.
 """
 
+from datetime import datetime
 from typing import Any
 
 from ggp_bot.intranet.models import TimeClockEvent, TimeClockStatus
+
+
+# Clock emojis for each hour (on the hour and half-hour)
+# Format: (hour, is_half_hour) -> emoji
+# Hours are 12-hour format (1-12)
+_CLOCK_EMOJIS: dict[tuple[int, bool], str] = {
+    (12, False): "🕛",  # 12:00
+    (12, True): "🕧",   # 12:30
+    (1, False): "🕐",   # 1:00
+    (1, True): "🕜",    # 1:30
+    (2, False): "🕑",   # 2:00
+    (2, True): "🕝",    # 2:30
+    (3, False): "🕒",   # 3:00
+    (3, True): "🕞",    # 3:30
+    (4, False): "🕓",   # 4:00
+    (4, True): "🕟",    # 4:30
+    (5, False): "🕔",   # 5:00
+    (5, True): "🕠",    # 5:30
+    (6, False): "🕕",   # 6:00
+    (6, True): "🕡",    # 6:30
+    (7, False): "🕖",   # 7:00
+    (7, True): "🕢",    # 7:30
+    (8, False): "🕗",   # 8:00
+    (8, True): "🕣",    # 8:30
+    (9, False): "🕘",   # 9:00
+    (9, True): "🕤",    # 9:30
+    (10, False): "🕙",  # 10:00
+    (10, True): "🕥",   # 10:30
+    (11, False): "🕚",  # 11:00
+    (11, True): "🕦",   # 11:30
+}
+
+
+def _get_clock_emoji_for_time(timestamp: str) -> str:
+    """Get the appropriate clock emoji for a given timestamp.
+
+    Rounds to the nearest half-hour, preferring to round up at :15/:45.
+
+    Args:
+        timestamp: ISO 8601 datetime string
+
+    Returns:
+        Clock emoji corresponding to the rounded time
+    """
+    try:
+        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    except (ValueError, AttributeError):
+        return "🕐"  # Default fallback
+
+    hour = dt.hour
+    minute = dt.minute
+
+    # Convert 24-hour to 12-hour format
+    hour_12 = hour % 12
+    if hour_12 == 0:
+        hour_12 = 12
+
+    # Round to nearest half hour
+    # 0-14 -> :00 (round down)
+    # 15-44 -> :30 (round up from 15, round down from 30-44)
+    # 45-59 -> next hour :00 (round up)
+    if minute < 15:
+        is_half = False
+    elif minute < 45:
+        is_half = True
+    else:
+        # Round up to next hour
+        is_half = False
+        hour_12 = hour_12 + 1
+        if hour_12 > 12:
+            hour_12 = 1
+
+    return _CLOCK_EMOJIS.get((hour_12, is_half), "🕐")
 
 
 def format_timecard_block(title: str, events: list[TimeClockEvent]) -> list[dict[str, Any]]:
@@ -222,21 +296,32 @@ def format_clock_confirmation(event_type: str, note: str | None = None) -> str:
     return text
 
 
-def format_attendance_message(user_name: str, event_type: str, note: str | None = None) -> str:
+def format_attendance_message(
+    user_name: str,
+    event_type: str,
+    note: str | None = None,
+    timestamp: str | None = None
+) -> str:
     """Format the #Attendance channel message.
-    
+
     Args:
         user_name: The user's display name
         event_type: "in" or "out"
         note: Optional note
-        
+        timestamp: Optional ISO 8601 timestamp for clock emoji
+
     Returns:
         Formatted Slack mrkdwn string for #Attendance (using *bold* and _italic_)
     """
+    # Get clock emoji based on timestamp
+    clock_emoji = ""
+    if timestamp:
+        clock_emoji = _get_clock_emoji_for_time(timestamp)
+
     bold_type = "*in*" if event_type == "in" else "*out*"
-    text = f"{user_name} clocked {bold_type}"
-    
+    text = f"{clock_emoji} {user_name} clocked {bold_type}"
+
     if note:
         text += f" _({note})_"
-    
+
     return text
