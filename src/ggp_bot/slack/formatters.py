@@ -288,7 +288,8 @@ def format_clock_confirmation(event_type: str, note: str | None = None) -> str:
         Formatted Slack mrkdwn string (using *bold* and _italic_)
     """
     bold_type = "*in*" if event_type == "in" else "*out*"
-    text = f":white_check_mark: You clocked {bold_type}"
+    emoji = ":white_check_mark:" if event_type == "in" else ":x:"
+    text = f"{emoji} You clocked {bold_type}"
     
     if note:
         text += f" _{note}_"
@@ -318,18 +319,16 @@ def format_attendance_message(
     if timestamp:
         clock_emoji = _get_clock_emoji_for_time(timestamp)
 
+    text = f"{clock_emoji} {user_name}"
     if event_type == "in":
-        bold_type = "*in*"
-        text = f"{clock_emoji} {user_name} clocked {bold_type}"
+        text += f" clocked *in*"
     elif event_type == "out":
-        bold_type = "*out*"
-        text = f"{clock_emoji} {user_name} clocked {bold_type}"
+        text += f" clocked *out*"
     elif event_type == "lunch":
-        bold_type = "*lunch*"
-        text = f"{clock_emoji} {user_name} started {bold_type}"
+        text += f" started *lunch*"
     else:
         # Fallback for unknown event types
-        text = f"{clock_emoji} {user_name} {event_type}"
+        text += f" {event_type}"
 
     if note:
         text += f" _({note})_"

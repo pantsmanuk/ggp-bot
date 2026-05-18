@@ -240,6 +240,8 @@ def _get_all_command_names() -> list[str]:
     # Add clock subcommands as 'clock <subcmd>'
     for subcmd in CLOCK_SUBCOMMANDS.keys():
         names.append(f"clock {subcmd}")
+    # Add clock aliases
+    names.extend(["in", "out", "lunch"])
     # Admin commands intentionally excluded - only discoverable by admins
     return names
 
@@ -390,6 +392,46 @@ async def _handle_help_subcommand(
                 await respond(help_text)
                 return
         
+        # Check for clock alias help
+        if topic_lower in ("in", "out", "lunch"):
+            subcmd = topic_lower
+            meta = CLOCK_SUBCOMMANDS[subcmd]
+            params = f" {meta['params']}" if meta['params'] else ""
+            
+            help_text = (
+                f"*/ggp {subcmd}{params}*\n"
+                f"Alias for `/ggp clock {subcmd}{params}`\n"
+                f"{meta['description']}\n\n"
+            )
+            
+            if subcmd == "in":
+                help_text += (
+                    "*Examples:*\n"
+                    "• /ggp in\n"
+                    "• /ggp in Working on project X\n\n"
+                    "Posts to #Attendance channel (only on state change)."
+                )
+            elif subcmd == "out":
+                help_text += (
+                    "*Examples:*\n"
+                    "• /ggp out\n"
+                    "• /ggp out Lunch break\n\n"
+                    "Posts to #Attendance channel (only on state change)."
+                )
+            elif subcmd == "lunch":
+                help_text += (
+                    "Starts a 1-hour lunch timer with DM reminders.\n\n"
+                    "*Reminders:*\n"
+                    "• 5 minutes left on lunch break\n"
+                    "• 1 minute left on lunch break\n"
+                    "• Lunch break over - please clock in\n\n"
+                    "*Idempotent:* Additional calls while timer is running do nothing.\n"
+                    "*Early return:* Clock in normally to cancel remaining reminders."
+                )
+            
+            await respond(help_text)
+            return
+        
         # Check for top-level command help
         all_commands = {**PUBLIC_COMMANDS, **AUTH_COMMANDS}
         if topic_lower in all_commands:
@@ -427,6 +469,10 @@ async def _handle_help_subcommand(
                 "• today - Show today's time card\n"
                 "• week - Show this week's time card\n"
                 "• (no subcommand) - Show current clock status\n\n"
+                "*Aliases:*\n"
+                "• /ggp in - Alias for `/ggp clock in`\n"
+                "• /ggp out - Alias for `/ggp clock out`\n"
+                "• /ggp lunch - Alias for `/ggp clock lunch`\n\n"
                 "*Examples:*\n"
                 "• /ggp clock in\n"
                 "• /ggp clock in Starting work on Project X\n"
@@ -503,6 +549,11 @@ async def _handle_help_subcommand(
         for name, meta in CLOCK_SUBCOMMANDS.items():
             lines.append(_format_command_help(f"clock {name}", meta))
         
+        lines.append("\n*Clock aliases:*")
+        lines.append("• /ggp in - Alias for `/ggp clock in`")
+        lines.append("• /ggp out - Alias for `/ggp clock out`")
+        lines.append("• /ggp lunch - Alias for `/ggp clock lunch`")
+        
         # Only show admin commands to admin users
         is_admin = await _check_is_admin_silent(slack_user_id)
         if is_admin:
@@ -521,7 +572,10 @@ async def _handle_help_subcommand(
             "• /ggp clock in\n"
             "• /ggp clock out Working late\n"
             "• /ggp clock lunch\n"
-            "• /ggp clock today"
+            "• /ggp clock today\n"
+            "• /ggp in\n"
+            "• /ggp out\n"
+            "• /ggp lunch"
         )
     else:
         lines.append(
@@ -537,6 +591,9 @@ async def _handle_help_subcommand(
             lines.append(f"• /ggp directory {name} - {meta['description']}")
         for name, meta in CLOCK_SUBCOMMANDS.items():
             lines.append(f"• /ggp clock {name} - {meta['description']}")
+        lines.append("• /ggp in - Alias for `/ggp clock in`")
+        lines.append("• /ggp out - Alias for `/ggp clock out`")
+        lines.append("• /ggp lunch - Alias for `/ggp clock lunch`")
     
     await respond("\n".join(lines))
 
@@ -2548,6 +2605,12 @@ async def handle_ggp_command(
         await _handle_directory_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "clock":
         await _handle_clock_subcommand(respond, slack_user_id, args, client)
+    elif subcommand == "in":
+        await _handle_clock_in_out_subcommand(respond, slack_user_id, "in", args, client)
+    elif subcommand == "out":
+        await _handle_clock_in_out_subcommand(respond, slack_user_id, "out", args, client)
+    elif subcommand == "lunch":
+        await _handle_clock_lunch_subcommand(respond, slack_user_id, client)
     elif subcommand == "admin":
         await _handle_admin_subcommand(respond, slack_user_id, args, client)
     elif subcommand == "help":
