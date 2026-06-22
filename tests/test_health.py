@@ -5,10 +5,14 @@ The health endpoint is public and uses the bot token rather than per-user auth.
 """
 
 import asyncio
+
+import pytest
+
 from ggp_bot.intranet import IntranetClient
 from ggp_bot.config import settings
 
 
+@pytest.mark.asyncio
 async def test_health_check():
     """Test basic connectivity to intranet health endpoint."""
     print(f"Testing connectivity to: {settings.intranet_base_url}")
@@ -28,6 +32,7 @@ async def test_health_check():
             raise
 
 
+@pytest.mark.asyncio
 async def test_rate_limits():
     """Test retrieving rate limit information."""
     print("\nTesting rate limits endpoint...")
