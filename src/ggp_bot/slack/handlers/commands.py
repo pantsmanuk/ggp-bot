@@ -181,7 +181,7 @@ CLOCK_SUBCOMMANDS = {
     "in": {
         "description": "Clock in",
         "requires_auth": True,
-        "params": "[note]",
+        "params": "[force] [note]",
     },
     "out": {
         "description": "Clock out",
@@ -360,7 +360,9 @@ async def _handle_help_subcommand(
                     help_text += (
                         "*Examples:*\n"
                         "• /ggp clock in\n"
-                        "• /ggp clock in Working on project X\n\n"
+                        "• /ggp clock in Working on project X\n"
+                        "• /ggp clock in force Working on project X\n\n"
+                        "*Public holiday warning:* If today is a public holiday, you must add `force` to clock in.\n"
                         "Posts to #Attendance channel (only on state change)."
                     )
                 elif subcmd == "out":
@@ -408,7 +410,9 @@ async def _handle_help_subcommand(
                 help_text += (
                     "*Examples:*\n"
                     "• /ggp in\n"
-                    "• /ggp in Working on project X\n\n"
+                    "• /ggp in Working on project X\n"
+                    "• /ggp in force Working on project X\n\n"
+                    "*Public holiday warning:* If today is a public holiday, you must add `force` to clock in.\n"
                     "Posts to #Attendance channel (only on state change)."
                 )
             elif subcmd == "out":
@@ -463,7 +467,7 @@ async def _handle_help_subcommand(
                 "*/ggp clock [subcommand]*\n"
                 "Time clock management for tracking work hours.\n\n"
                 "*Subcommands:*\n"
-                "• in [note] - Clock in (posts to #Attendance)\n"
+                "• in [force] [note] - Clock in (posts to #Attendance)\n"
                 "• out [note] - Clock out (posts to #Attendance)\n"
                 "• lunch - Start 1-hour lunch timer with DM reminders\n"
                 "• today - Show today's time card\n"
@@ -476,6 +480,7 @@ async def _handle_help_subcommand(
                 "*Examples:*\n"
                 "• /ggp clock in\n"
                 "• /ggp clock in Starting work on Project X\n"
+                "• /ggp clock in force Starting work on Project X\n"
                 "• /ggp clock out Lunch\n"
                 "• /ggp clock lunch\n"
                 "• /ggp clock\n"
@@ -570,10 +575,12 @@ async def _handle_help_subcommand(
             "• /ggp directory search john\n"
             "• /ggp whois @john.doe\n"
             "• /ggp clock in\n"
+            "• /ggp clock in force Working late\n"
             "• /ggp clock out Working late\n"
             "• /ggp clock lunch\n"
             "• /ggp clock today\n"
             "• /ggp in\n"
+            "• /ggp in force\n"
             "• /ggp out\n"
             "• /ggp lunch"
         )
@@ -1800,7 +1807,32 @@ async def _handle_clock_in_out_subcommand(
         return
     
     note = args.strip() if args else None
-    
+    force = False
+
+    # For clock-in: check if today is a public holiday unless forced
+    if event_type == "in":
+        # Parse force flag from first token
+        if note:
+            parts = note.split(None, 1)
+            if parts[0].lower() == "force":
+                force = True
+                note = parts[1] if len(parts) > 1 else None
+
+        if not force:
+            try:
+                async with IntranetClient.with_bot_token() as holiday_client:
+                    holiday = await holiday_client.get_next_public_holiday()
+                    if holiday.is_today:
+                        await respond(
+                            f":calendar: *Public Holiday Today*\n"
+                            f"Today is {holiday.name}.\n\n"
+                            f"If you really want to work, use `/ggp clock in force` or `/ggp in force`."
+                        )
+                        return
+            except Exception as e:
+                logger.warning(f"Failed to check public holiday for clock-in guard: {e}")
+                # Fail open: allow clock-in if holiday API fails
+
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             # Get user profile for name
