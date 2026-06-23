@@ -2576,6 +2576,9 @@ async def _handle_admin_holiday_pending_subcommand(
     if args.strip():
         try:
             page = int(args.strip())
+            if page < 1:
+                await respond(":warning: Page must be 1 or greater.")
+                return
         except ValueError:
             pass
 
