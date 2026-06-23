@@ -9,7 +9,6 @@ These tests verify the /ggp admin holiday subcommands:
 """
 
 import pytest
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from ggp_bot.slack.handlers.commands import (
@@ -279,6 +278,10 @@ class TestAdminHolidayApprove:
 
             with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
                 admin_client = AsyncMock()
+                # First call: get_admin_pending_holidays returns empty (no warning needed)
+                admin_client.get_admin_pending_holidays = AsyncMock(
+                    return_value=AdminHolidayList(holidays=[], summary=AdminHolidaySummary(total_pending=0, total_users=0, total_working_days=0.0))
+                )
                 result = AdminBulkResult(approved_count=15, total_working_days=23.5)
                 admin_client.approve_all_holidays = AsyncMock(return_value=result)
                 MockClient.for_user = AsyncMock(return_value=AsyncMock(
@@ -353,6 +356,10 @@ class TestAdminHolidayDeny:
 
             with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
                 admin_client = AsyncMock()
+                # First call: get_admin_pending_holidays returns empty (no warning needed)
+                admin_client.get_admin_pending_holidays = AsyncMock(
+                    return_value=AdminHolidayList(holidays=[], summary=AdminHolidaySummary(total_pending=0, total_users=0, total_working_days=0.0))
+                )
                 result = AdminBulkResult(denied_count=10, total_working_days=15.0)
                 admin_client.deny_all_holidays = AsyncMock(return_value=result)
                 MockClient.for_user = AsyncMock(return_value=AsyncMock(
@@ -420,7 +427,7 @@ class TestAdminHolidayDispatcher:
 
     @pytest.mark.asyncio
     async def test_dispatcher_empty_shows_help(self, mock_respond, admin_user, admin_token):
-        """Dispatcher shows help when no subcommand given."""
+        """Dispatcher shows usage help when no subcommand given."""
         with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
             mock_storage.has_token.return_value = True
             mock_storage.get_token.return_value = admin_token
@@ -437,7 +444,7 @@ class TestAdminHolidayDispatcher:
 
                 mock_respond.assert_called_once()
                 response = mock_respond.call_args[0][0]
-                assert "Unknown admin holiday command" in response
+                assert "Usage" in response
                 assert "pending" in response
 
 
@@ -497,6 +504,10 @@ class TestAdminHolidayValidation:
 
             with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
                 admin_client = AsyncMock()
+                # First call: get_admin_pending_holidays returns empty (no warning needed)
+                admin_client.get_admin_pending_holidays = AsyncMock(
+                    return_value=AdminHolidayList(holidays=[], summary=AdminHolidaySummary(total_pending=0, total_users=0, total_working_days=0.0))
+                )
                 result = AdminBulkResult(denied_count=5)
                 admin_client.deny_all_holidays = AsyncMock(return_value=result)
                 MockClient.for_user = AsyncMock(return_value=AsyncMock(
@@ -508,3 +519,163 @@ class TestAdminHolidayValidation:
                 await _handle_admin_holiday_deny_all_subcommand(mock_respond, "U_ADMIN", "", mock_client)
 
                 admin_client.deny_all_holidays.assert_called_once_with(reason="No reason provided")
+
+
+class TestAdminHolidayExceptions:
+    """Verify exception handling paths."""
+
+    @pytest.mark.asyncio
+    async def test_pending_intranet_error(self, mock_respond, admin_user, admin_token):
+        """IntranetError during pending listing returns error message."""
+        from ggp_bot.intranet.errors import IntranetError
+        with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
+            mock_storage.has_token.return_value = True
+            mock_storage.get_token.return_value = admin_token
+
+            with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
+                admin_client = AsyncMock()
+                admin_client.get_admin_pending_holidays = AsyncMock(
+                    side_effect=IntranetError("API down", "SERVER_ERROR")
+                )
+                MockClient.for_user = AsyncMock(return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=admin_client),
+                    __aexit__=AsyncMock(return_value=False),
+                ))
+                admin_client.get_user_by_slack_id = AsyncMock(return_value=admin_user)
+
+                await _handle_admin_holiday_pending_subcommand(mock_respond, "U_ADMIN", "", mock_client)
+
+                mock_respond.assert_called_once()
+                response = mock_respond.call_args[0][0]
+                assert "Failed to fetch pending holidays" in response
+
+    @pytest.mark.asyncio
+    async def test_approve_intranet_error(self, mock_respond, admin_user, admin_token):
+        """IntranetError during approve returns error message."""
+        from ggp_bot.intranet.errors import IntranetError
+        with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
+            mock_storage.has_token.return_value = True
+            mock_storage.get_token.return_value = admin_token
+
+            with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
+                admin_client = AsyncMock()
+                admin_client.bulk_approve_holidays = AsyncMock(
+                    side_effect=IntranetError("Not found", "NOT_FOUND")
+                )
+                MockClient.for_user = AsyncMock(return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=admin_client),
+                    __aexit__=AsyncMock(return_value=False),
+                ))
+                admin_client.get_user_by_slack_id = AsyncMock(return_value=admin_user)
+
+                await _handle_admin_holiday_approve_subcommand(
+                    mock_respond, "U_ADMIN", "123, 125", mock_client
+                )
+
+                mock_respond.assert_called_once()
+                response = mock_respond.call_args[0][0]
+                assert "Failed to approve holidays" in response
+
+
+class TestAdminHolidayParsing:
+    """Verify ID parsing edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_dispatcher_empty_shows_usage(self, mock_respond, admin_user, admin_token):
+        """Empty subcommand shows usage help, not 'Unknown command'."""
+        with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
+            mock_storage.has_token.return_value = True
+            mock_storage.get_token.return_value = admin_token
+
+            with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
+                admin_client = AsyncMock()
+                admin_client.get_user_by_slack_id = AsyncMock(return_value=admin_user)
+                MockClient.for_user = AsyncMock(return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=admin_client),
+                    __aexit__=AsyncMock(return_value=False),
+                ))
+
+                await _handle_admin_holiday_subcommand(mock_respond, "U_ADMIN", "", mock_client)
+
+                mock_respond.assert_called_once()
+                response = mock_respond.call_args[0][0]
+                assert "Usage" in response
+                assert "pending" in response
+                assert "approve" in response
+                assert "deny" in response
+                assert "Unknown" not in response
+
+    @pytest.mark.asyncio
+    async def test_approve_parses_multi_id_with_spaces(self, mock_respond, admin_user, admin_token):
+        """Multi-ID input with spaces after commas parses correctly."""
+        with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
+            mock_storage.has_token.return_value = True
+            mock_storage.get_token.return_value = admin_token
+
+            with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
+                admin_client = AsyncMock()
+                result = AdminBulkResult(approved_count=3)
+                admin_client.bulk_approve_holidays = AsyncMock(return_value=result)
+                MockClient.for_user = AsyncMock(return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=admin_client),
+                    __aexit__=AsyncMock(return_value=False),
+                ))
+                admin_client.get_user_by_slack_id = AsyncMock(return_value=admin_user)
+
+                await _handle_admin_holiday_approve_subcommand(
+                    mock_respond, "U_ADMIN", "123, 125, 127 Approved for project", mock_client
+                )
+
+                admin_client.bulk_approve_holidays.assert_called_once_with(
+                    ids="123, 125, 127", note="Approved for project"
+                )
+
+    @pytest.mark.asyncio
+    async def test_deny_parses_multi_id_with_spaces(self, mock_respond, admin_user, admin_token):
+        """Multi-ID deny with spaces after commas parses correctly."""
+        with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
+            mock_storage.has_token.return_value = True
+            mock_storage.get_token.return_value = admin_token
+
+            with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
+                admin_client = AsyncMock()
+                result = AdminBulkResult(denied_count=3)
+                admin_client.bulk_deny_holidays = AsyncMock(return_value=result)
+                MockClient.for_user = AsyncMock(return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=admin_client),
+                    __aexit__=AsyncMock(return_value=False),
+                ))
+                admin_client.get_user_by_slack_id = AsyncMock(return_value=admin_user)
+
+                await _handle_admin_holiday_deny_subcommand(
+                    mock_respond, "U_ADMIN", "123, 125, 127 Company-wide freeze", mock_client
+                )
+
+                admin_client.bulk_deny_holidays.assert_called_once_with(
+                    ids="123, 125, 127", reason="Company-wide freeze"
+                )
+
+    @pytest.mark.asyncio
+    async def test_approve_parses_single_id_no_text(self, mock_respond, admin_user, admin_token):
+        """Single ID without trailing text parses correctly."""
+        with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
+            mock_storage.has_token.return_value = True
+            mock_storage.get_token.return_value = admin_token
+
+            with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
+                admin_client = AsyncMock()
+                result = AdminBulkResult(approved_count=1)
+                admin_client.bulk_approve_holidays = AsyncMock(return_value=result)
+                MockClient.for_user = AsyncMock(return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=admin_client),
+                    __aexit__=AsyncMock(return_value=False),
+                ))
+                admin_client.get_user_by_slack_id = AsyncMock(return_value=admin_user)
+
+                await _handle_admin_holiday_approve_subcommand(
+                    mock_respond, "U_ADMIN", "150-155", mock_client
+                )
+
+                admin_client.bulk_approve_holidays.assert_called_once_with(
+                    ids="150-155", note=None
+                )

@@ -2256,6 +2256,60 @@ async def _check_is_admin_silent(slack_user_id: str) -> bool:
         return False
 
 
+# ============================================================================
+# Admin Holiday Helpers
+# ============================================================================
+
+import re as _re
+
+def _parse_ids_and_text(args: str) -> tuple[str, str | None]:
+    """Split 'ids [optional text]' where ids may contain digits, commas, hyphens, spaces.
+    
+    Args:
+        args: Raw command text after subcommand (e.g., "123, 125, 127 Approved for project")
+    
+    Returns:
+        (ids, text) — ids is stripped, text is stripped or None
+    """
+    text = args.strip()
+    if not text:
+        return "", None
+    # Match longest leading sequence ending in a digit, then whitespace, then the rest
+    m = _re.match(r'^([\d,\-\s]*\d)\s+(\S.*)$', text)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    # Entire string is just IDs (no trailing text)
+    return text, None
+
+
+async def _require_admin_holiday_scope(
+    respond: AsyncRespond,
+    slack_user_id: str
+) -> bool:
+    """Check if the user has bot:admin:holiday scope.
+    
+    Args:
+        respond: Slack respond function
+        slack_user_id: The Slack user ID to check
+    
+    Returns:
+        True if user has the scope, False otherwise (response already sent)
+    """
+    user_token = token_storage.get_token(slack_user_id)
+    if not user_token or not user_token.has_scope("bot:admin:holiday"):
+        logger.warning(
+            f"ADMIN: User {slack_user_id} attempted admin holiday command "
+            f"but lacks bot:admin:holiday scope."
+        )
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Missing required scope: `bot:admin:holiday`\n"
+            "Please run `/ggp connect` again to refresh your permissions."
+        )
+        return False
+    return True
+
+
 async def _handle_admin_cache_clear_subcommand(
     respond: AsyncRespond,
     slack_user_id: str,
@@ -2514,14 +2568,7 @@ async def _handle_admin_holiday_pending_subcommand(
     if not await _require_admin(respond, slack_user_id):
         return
 
-    # Check scope
-    user_token = token_storage.get_token(slack_user_id)
-    if user_token and not user_token.has_scope("bot:admin:holiday"):
-        await respond(
-            ":x: *Permission Denied*\n"
-            "Missing required scope: `bot:admin:holiday`\n"
-            "Please run `/ggp connect` again to refresh your permissions."
-        )
+    if not await _require_admin_holiday_scope(respond, slack_user_id):
         return
 
     # Parse optional page
@@ -2584,12 +2631,7 @@ async def _handle_admin_holiday_approve_subcommand(
     if not await _require_admin(respond, slack_user_id):
         return
 
-    user_token = token_storage.get_token(slack_user_id)
-    if user_token and not user_token.has_scope("bot:admin:holiday"):
-        await respond(
-            ":x: *Permission Denied*\n"
-            "Missing required scope: `bot:admin:holiday`"
-        )
+    if not await _require_admin_holiday_scope(respond, slack_user_id):
         return
 
     if not args.strip():
@@ -2604,15 +2646,13 @@ async def _handle_admin_holiday_approve_subcommand(
         return
 
     # Parse IDs and optional note
-    parts = args.strip().split(None, 1)
-    ids = parts[0]
-    note = parts[1] if len(parts) > 1 else None
+    ids, note = _parse_ids_and_text(args)
 
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             result = await intranet.bulk_approve_holidays(ids=ids, note=note)
 
-            lines = [f":white_check_mark: *Holidays Approved*"]
+            lines = [":white_check_mark: *Holidays Approved*"]
             lines.append(f"• Approved: {result.approved_count}")
             if result.failed_count:
                 lines.append(f"• Failed: {result.failed_count}")
@@ -2621,9 +2661,6 @@ async def _handle_admin_holiday_approve_subcommand(
 
             await respond("\n".join(lines))
 
-    except IntranetScopeError as e:
-        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
-        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
     except IntranetError as e:
         logger.error(f"Failed to approve holidays for admin {slack_user_id}: {e}")
         await respond(f":x: Failed to approve holidays: {e}")
@@ -2641,28 +2678,35 @@ async def _handle_admin_holiday_approve_all_subcommand(
     if not await _require_admin(respond, slack_user_id):
         return
 
-    user_token = token_storage.get_token(slack_user_id)
-    if user_token and not user_token.has_scope("bot:admin:holiday"):
-        await respond(
-            ":x: *Permission Denied*\n"
-            "Missing required scope: `bot:admin:holiday`"
-        )
+    if not await _require_admin_holiday_scope(respond, slack_user_id):
         return
 
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # Fetch pending count first to warn the admin
+            pending = await intranet.get_admin_pending_holidays(page=1, per_page=1)
+            if pending.summary:
+                count = pending.summary.total_pending
+                days = pending.summary.total_working_days
+                if count > 0:
+                    await respond(
+                        f":warning: *This will approve all {count} pending holiday requests "
+                        f"({days} working days).*\n"
+                        "Run the command again to confirm."
+                    )
+                    return
+
             result = await intranet.approve_all_holidays()
 
-            lines = [f":white_check_mark: *All Holidays Approved*"]
+            lines = [":white_check_mark: *All Holidays Approved*"]
             lines.append(f"• Approved: {result.approved_count}")
+            if result.failed_count:
+                lines.append(f"• Failed: {result.failed_count}")
             if result.total_working_days:
                 lines.append(f"• Total working days: {result.total_working_days}")
 
             await respond("\n".join(lines))
 
-    except IntranetScopeError as e:
-        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
-        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
     except IntranetError as e:
         logger.error(f"Failed to approve all holidays for admin {slack_user_id}: {e}")
         await respond(f":x: Failed to approve all holidays: {e}")
@@ -2681,12 +2725,7 @@ async def _handle_admin_holiday_deny_subcommand(
     if not await _require_admin(respond, slack_user_id):
         return
 
-    user_token = token_storage.get_token(slack_user_id)
-    if user_token and not user_token.has_scope("bot:admin:holiday"):
-        await respond(
-            ":x: *Permission Denied*\n"
-            "Missing required scope: `bot:admin:holiday`"
-        )
+    if not await _require_admin_holiday_scope(respond, slack_user_id):
         return
 
     if not args.strip():
@@ -2700,15 +2739,15 @@ async def _handle_admin_holiday_deny_subcommand(
         return
 
     # Parse IDs and optional reason
-    parts = args.strip().split(None, 1)
-    ids = parts[0]
-    reason = parts[1] if len(parts) > 1 else "No reason provided"
+    ids, reason = _parse_ids_and_text(args)
+    if reason is None:
+        reason = "No reason provided"
 
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
             result = await intranet.bulk_deny_holidays(ids=ids, reason=reason)
 
-            lines = [f":white_check_mark: *Holidays Denied*"]
+            lines = [":white_check_mark: *Holidays Denied*"]
             lines.append(f"• Denied: {result.denied_count}")
             if result.failed_count:
                 lines.append(f"• Failed: {result.failed_count}")
@@ -2717,9 +2756,6 @@ async def _handle_admin_holiday_deny_subcommand(
 
             await respond("\n".join(lines))
 
-    except IntranetScopeError as e:
-        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
-        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
     except IntranetError as e:
         logger.error(f"Failed to deny holidays for admin {slack_user_id}: {e}")
         await respond(f":x: Failed to deny holidays: {e}")
@@ -2738,30 +2774,37 @@ async def _handle_admin_holiday_deny_all_subcommand(
     if not await _require_admin(respond, slack_user_id):
         return
 
-    user_token = token_storage.get_token(slack_user_id)
-    if user_token and not user_token.has_scope("bot:admin:holiday"):
-        await respond(
-            ":x: *Permission Denied*\n"
-            "Missing required scope: `bot:admin:holiday`"
-        )
+    if not await _require_admin_holiday_scope(respond, slack_user_id):
         return
 
     reason = args.strip() if args.strip() else "No reason provided"
 
     try:
         async with await IntranetClient.for_user(slack_user_id) as intranet:
+            # Fetch pending count first to warn the admin
+            pending = await intranet.get_admin_pending_holidays(page=1, per_page=1)
+            if pending.summary:
+                count = pending.summary.total_pending
+                days = pending.summary.total_working_days
+                if count > 0:
+                    await respond(
+                        f":warning: *This will deny all {count} pending holiday requests "
+                        f"({days} working days).*\n"
+                        "Run the command again to confirm."
+                    )
+                    return
+
             result = await intranet.deny_all_holidays(reason=reason)
 
-            lines = [f":white_check_mark: *All Holidays Denied*"]
+            lines = [":white_check_mark: *All Holidays Denied*"]
             lines.append(f"• Denied: {result.denied_count}")
+            if result.failed_count:
+                lines.append(f"• Failed: {result.failed_count}")
             if result.total_working_days:
                 lines.append(f"• Total working days: {result.total_working_days}")
 
             await respond("\n".join(lines))
 
-    except IntranetScopeError as e:
-        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
-        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
     except IntranetError as e:
         logger.error(f"Failed to deny all holidays for admin {slack_user_id}: {e}")
         await respond(f":x: Failed to deny all holidays: {e}")
@@ -2787,6 +2830,18 @@ async def _handle_admin_holiday_subcommand(
     parts = args.strip().split(None, 1)
     subcommand = parts[0].lower() if parts else ""
     sub_args = parts[1] if len(parts) > 1 else ""
+
+    if not subcommand:
+        await respond(
+            "*Usage:* `/ggp admin holiday <subcommand>`\n\n"
+            "*Available subcommands:*\n"
+            "• pending [page]\n"
+            "• approve <ids> [note]\n"
+            "• approve-all\n"
+            "• deny <ids> [reason]\n"
+            "• deny-all [reason]"
+        )
+        return
 
     if subcommand == "pending":
         await _handle_admin_holiday_pending_subcommand(respond, slack_user_id, sub_args, client)

@@ -428,6 +428,7 @@ class IntranetClient:
         result = data.get("data", {})
         return AdminBulkResult(
             approved_count=result.get("approved_count", 0),
+            failed_count=result.get("failed_count", 0),
             total_working_days=result.get("total_working_days", 0.0),
             message=data.get("message"),
         )
@@ -466,6 +467,7 @@ class IntranetClient:
         result = data.get("data", {})
         return AdminBulkResult(
             denied_count=result.get("denied_count", 0),
+            failed_count=result.get("failed_count", 0),
             total_working_days=result.get("total_working_days", 0.0),
             message=data.get("message"),
         )
