@@ -219,6 +219,28 @@ class TestAdminHolidayPending:
 
                 admin_client.get_admin_pending_holidays.assert_called_once_with(page=2)
 
+    @pytest.mark.asyncio
+    async def test_admin_pending_rejects_invalid_page(self, mock_respond, admin_user, admin_token):
+        """Page numbers below 1 are rejected with a warning."""
+        with patch("ggp_bot.slack.handlers.commands.token_storage") as mock_storage:
+            mock_storage.has_token.return_value = True
+            mock_storage.get_token.return_value = admin_token
+
+            with patch("ggp_bot.slack.handlers.commands.IntranetClient") as MockClient:
+                admin_client = AsyncMock()
+                admin_client.get_user_by_slack_id = AsyncMock(return_value=admin_user)
+                MockClient.for_user = AsyncMock(return_value=AsyncMock(
+                    __aenter__=AsyncMock(return_value=admin_client),
+                    __aexit__=AsyncMock(return_value=False),
+                ))
+
+                await _handle_admin_holiday_pending_subcommand(mock_respond, "U_ADMIN", "0", mock_client)
+
+                mock_respond.assert_called_once()
+                response = mock_respond.call_args[0][0]
+                assert "Page must be 1 or greater" in response
+                admin_client.get_admin_pending_holidays.assert_not_called()
+
 
 class TestAdminHolidayApprove:
     """Verify admin holiday approve commands."""
