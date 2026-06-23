@@ -221,6 +221,11 @@ ADMIN_SUBCOMMANDS = {
         "requires_auth": True,
         "params": "<check>",
     },
+    "holiday": {
+        "description": "Admin holiday management (approve/deny)",
+        "requires_auth": True,
+        "params": "<pending|approve|approve-all|deny|deny-all>",
+    },
 }
 
 
@@ -508,14 +513,24 @@ async def _handle_help_subcommand(
                 "• cache status - Show token cache statistics\n"
                 "• gc status - Show GC schedule and last run\n"
                 "• gc run - Manually trigger garbage collection\n"
-                "• integrity check - Validate all databases\n\n"
+                "• integrity check - Validate all databases\n"
+                "• holiday pending [page] - List pending holiday requests\n"
+                "• holiday approve <ids> [note] - Approve holiday requests\n"
+                "• holiday approve-all - Approve all pending holidays\n"
+                "• holiday deny <ids> [reason] - Deny holiday requests\n"
+                "• holiday deny-all [reason] - Deny all pending holidays\n\n"
                 "*Examples:*\n"
                 "• /ggp admin cache clear @john.doe\n"
                 "• /ggp admin cache status\n"
                 "• /ggp admin gc status\n"
                 "• /ggp admin gc run\n"
-                "• /ggp admin integrity check\n\n"
-                "_Note: Admin commands require an admin role._"
+                "• /ggp admin integrity check\n"
+                "• /ggp admin holiday pending\n"
+                "• /ggp admin holiday approve 123, 125-127\n"
+                "• /ggp admin holiday approve-all\n"
+                "• /ggp admin holiday deny 123 Insufficient coverage\n"
+                "• /ggp admin holiday deny-all Company-wide freeze\n\n"
+                "_Note: Admin commands require an admin role and `bot:admin:holiday` scope for holiday commands._"
             )
             await respond(help_text)
             return
@@ -2489,6 +2504,328 @@ async def _handle_admin_integrity_check_subcommand(
         await respond(f":x: Integrity check failed: {e}")
 
 
+async def _handle_admin_holiday_pending_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None,
+) -> None:
+    """Handle admin holiday pending — list pending requests."""
+    if not await _require_admin(respond, slack_user_id):
+        return
+
+    # Check scope
+    user_token = token_storage.get_token(slack_user_id)
+    if user_token and not user_token.has_scope("bot:admin:holiday"):
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Missing required scope: `bot:admin:holiday`\n"
+            "Please run `/ggp connect` again to refresh your permissions."
+        )
+        return
+
+    # Parse optional page
+    page = 1
+    if args.strip():
+        try:
+            page = int(args.strip())
+        except ValueError:
+            pass
+
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            result = await intranet.get_admin_pending_holidays(page=page)
+
+            if not result.holidays:
+                await respond("No pending holiday requests found. :white_check_mark:")
+                return
+
+            lines = [f"*Pending Holiday Requests* :hourglass_flowing_sand: (page {page})"]
+
+            for h in result.holidays:
+                date_display = _format_holiday_dates(h)
+                lines.append(
+                    f"• #{h.id}: {h.user.name} — {date_display}"
+                    f" ({h.working_days} day(s))"
+                )
+                if h.note:
+                    lines.append(f"  _Note: {h.note}_")
+
+            if result.summary:
+                lines.append(
+                    f"\n_Summary: {result.summary.total_pending} pending, "
+                    f"{result.summary.total_users} users, "
+                    f"{result.summary.total_working_days} working days total_"
+                )
+
+            await respond("\n".join(lines))
+
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Your account doesn't have admin holiday management permission."
+        )
+    except IntranetError as e:
+        logger.error(f"Failed to fetch pending holidays for admin {slack_user_id}: {e}")
+        await respond(f":x: Failed to fetch pending holidays: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error fetching pending holidays for admin {slack_user_id}: {e}", exc_info=True)
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_admin_holiday_approve_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None,
+) -> None:
+    """Handle admin holiday approve — bulk approve by IDs."""
+    if not await _require_admin(respond, slack_user_id):
+        return
+
+    user_token = token_storage.get_token(slack_user_id)
+    if user_token and not user_token.has_scope("bot:admin:holiday"):
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Missing required scope: `bot:admin:holiday`"
+        )
+        return
+
+    if not args.strip():
+        await respond(
+            ":warning: *Usage:* `/ggp admin holiday approve <ids> [note]`\n"
+            "*Examples:*\n"
+            "• `/ggp admin holiday approve 123`\n"
+            "• `/ggp admin holiday approve 123, 125, 127`\n"
+            "• `/ggp admin holiday approve 150-155`\n"
+            "• `/ggp admin holiday approve 150, 152-155, 158 Approved for project`"
+        )
+        return
+
+    # Parse IDs and optional note
+    parts = args.strip().split(None, 1)
+    ids = parts[0]
+    note = parts[1] if len(parts) > 1 else None
+
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            result = await intranet.bulk_approve_holidays(ids=ids, note=note)
+
+            lines = [f":white_check_mark: *Holidays Approved*"]
+            lines.append(f"• Approved: {result.approved_count}")
+            if result.failed_count:
+                lines.append(f"• Failed: {result.failed_count}")
+            if result.total_working_days:
+                lines.append(f"• Total working days: {result.total_working_days}")
+
+            await respond("\n".join(lines))
+
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
+        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
+    except IntranetError as e:
+        logger.error(f"Failed to approve holidays for admin {slack_user_id}: {e}")
+        await respond(f":x: Failed to approve holidays: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error approving holidays for admin {slack_user_id}: {e}", exc_info=True)
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_admin_holiday_approve_all_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    client: AsyncWebClient | None = None,
+) -> None:
+    """Handle admin holiday approve-all — approve all pending."""
+    if not await _require_admin(respond, slack_user_id):
+        return
+
+    user_token = token_storage.get_token(slack_user_id)
+    if user_token and not user_token.has_scope("bot:admin:holiday"):
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Missing required scope: `bot:admin:holiday`"
+        )
+        return
+
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            result = await intranet.approve_all_holidays()
+
+            lines = [f":white_check_mark: *All Holidays Approved*"]
+            lines.append(f"• Approved: {result.approved_count}")
+            if result.total_working_days:
+                lines.append(f"• Total working days: {result.total_working_days}")
+
+            await respond("\n".join(lines))
+
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
+        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
+    except IntranetError as e:
+        logger.error(f"Failed to approve all holidays for admin {slack_user_id}: {e}")
+        await respond(f":x: Failed to approve all holidays: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error approving all holidays for admin {slack_user_id}: {e}", exc_info=True)
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_admin_holiday_deny_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None,
+) -> None:
+    """Handle admin holiday deny — bulk deny by IDs."""
+    if not await _require_admin(respond, slack_user_id):
+        return
+
+    user_token = token_storage.get_token(slack_user_id)
+    if user_token and not user_token.has_scope("bot:admin:holiday"):
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Missing required scope: `bot:admin:holiday`"
+        )
+        return
+
+    if not args.strip():
+        await respond(
+            ":warning: *Usage:* `/ggp admin holiday deny <ids> [reason]`\n"
+            "*Examples:*\n"
+            "• `/ggp admin holiday deny 123 Insufficient coverage`\n"
+            "• `/ggp admin holiday deny 123, 125, 127 Insufficient coverage`\n"
+            "• `/ggp admin holiday deny 150-155 Company-wide freeze`"
+        )
+        return
+
+    # Parse IDs and optional reason
+    parts = args.strip().split(None, 1)
+    ids = parts[0]
+    reason = parts[1] if len(parts) > 1 else "No reason provided"
+
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            result = await intranet.bulk_deny_holidays(ids=ids, reason=reason)
+
+            lines = [f":white_check_mark: *Holidays Denied*"]
+            lines.append(f"• Denied: {result.denied_count}")
+            if result.failed_count:
+                lines.append(f"• Failed: {result.failed_count}")
+            if result.total_working_days:
+                lines.append(f"• Total working days: {result.total_working_days}")
+
+            await respond("\n".join(lines))
+
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
+        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
+    except IntranetError as e:
+        logger.error(f"Failed to deny holidays for admin {slack_user_id}: {e}")
+        await respond(f":x: Failed to deny holidays: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error denying holidays for admin {slack_user_id}: {e}", exc_info=True)
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_admin_holiday_deny_all_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None,
+) -> None:
+    """Handle admin holiday deny-all — deny all pending."""
+    if not await _require_admin(respond, slack_user_id):
+        return
+
+    user_token = token_storage.get_token(slack_user_id)
+    if user_token and not user_token.has_scope("bot:admin:holiday"):
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Missing required scope: `bot:admin:holiday`"
+        )
+        return
+
+    reason = args.strip() if args.strip() else "No reason provided"
+
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            result = await intranet.deny_all_holidays(reason=reason)
+
+            lines = [f":white_check_mark: *All Holidays Denied*"]
+            lines.append(f"• Denied: {result.denied_count}")
+            if result.total_working_days:
+                lines.append(f"• Total working days: {result.total_working_days}")
+
+            await respond("\n".join(lines))
+
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks admin holiday scope: {e}")
+        await respond(":x: *Permission Denied*\nMissing scope: `bot:admin:holiday`")
+    except IntranetError as e:
+        logger.error(f"Failed to deny all holidays for admin {slack_user_id}: {e}")
+        await respond(f":x: Failed to deny all holidays: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error denying all holidays for admin {slack_user_id}: {e}", exc_info=True)
+        await respond(f":x: Unexpected error: {e}")
+
+
+async def _handle_admin_holiday_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None,
+) -> None:
+    """Dispatch admin holiday subcommands.
+
+    Args:
+        respond: Slack respond function
+        slack_user_id: The Slack user ID
+        args: Subcommand and arguments
+        client: Optional Slack WebClient
+    """
+    parts = args.strip().split(None, 1)
+    subcommand = parts[0].lower() if parts else ""
+    sub_args = parts[1] if len(parts) > 1 else ""
+
+    if subcommand == "pending":
+        await _handle_admin_holiday_pending_subcommand(respond, slack_user_id, sub_args, client)
+    elif subcommand == "approve":
+        await _handle_admin_holiday_approve_subcommand(respond, slack_user_id, sub_args, client)
+    elif subcommand == "approve-all":
+        await _handle_admin_holiday_approve_all_subcommand(respond, slack_user_id, client)
+    elif subcommand == "deny":
+        await _handle_admin_holiday_deny_subcommand(respond, slack_user_id, sub_args, client)
+    elif subcommand == "deny-all":
+        await _handle_admin_holiday_deny_all_subcommand(respond, slack_user_id, sub_args, client)
+    else:
+        valid = ["pending", "approve", "approve-all", "deny", "deny-all"]
+        suggestion = _suggest_command(subcommand, [f"admin holiday {cmd}" for cmd in valid])
+
+        if suggestion:
+            clean = suggestion.replace("admin holiday ", "")
+            await respond(
+                f":warning: Unknown admin holiday command '{subcommand}'.\n"
+                f"Did you mean: `admin holiday {clean}`?\n\n"
+                f"*Available commands:*\n"
+                f"• pending [page]\n"
+                f"• approve <ids> [note]\n"
+                f"• approve-all\n"
+                f"• deny <ids> [reason]\n"
+                f"• deny-all [reason]"
+            )
+        else:
+            await respond(
+                f":warning: Unknown admin holiday command '{subcommand}'.\n\n"
+                f"*Available commands:*\n"
+                f"• pending [page]\n"
+                f"• approve <ids> [note]\n"
+                f"• approve-all\n"
+                f"• deny <ids> [reason]\n"
+                f"• deny-all [reason]"
+            )
+
+
 async def _handle_admin_subcommand(
     respond: AsyncRespond,
     slack_user_id: str,
@@ -2560,6 +2897,9 @@ async def _handle_admin_subcommand(
                 f"Run `/ggp help admin` for more details."
             )
     
+    elif subcommand == "holiday":
+        await _handle_admin_holiday_subcommand(respond, slack_user_id, sub_args, client)
+    
     else:
         # Unknown admin subcommand
         valid_subcommands = list(ADMIN_SUBCOMMANDS.keys())
@@ -2573,7 +2913,8 @@ async def _handle_admin_subcommand(
                 f"*Available admin commands:*\n"
                 f"• /ggp admin cache <clear|status> - Token cache management\n"
                 f"• /ggp admin gc <status|run> - Garbage collection control\n"
-                f"• /ggp admin integrity check - Database integrity checking\n\n"
+                f"• /ggp admin integrity check - Database integrity checking\n"
+                f"• /ggp admin holiday <pending|approve|approve-all|deny|deny-all> - Holiday management\n\n"
                 f"Run `/ggp help admin` for more details."
             )
         else:
@@ -2582,7 +2923,8 @@ async def _handle_admin_subcommand(
                 f"*Available admin commands:*\n"
                 f"• /ggp admin cache <clear|status> - Token cache management\n"
                 f"• /ggp admin gc <status|run> - Garbage collection control\n"
-                f"• /ggp admin integrity check - Database integrity checking\n\n"
+                f"• /ggp admin integrity check - Database integrity checking\n"
+                f"• /ggp admin holiday <pending|approve|approve-all|deny|deny-all> - Holiday management\n\n"
                 f"Run `/ggp help admin` for more details."
             )
 

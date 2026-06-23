@@ -1,4 +1,4 @@
-"""Intranet API client for GGP Laravel backend - aligned with API v1.0.0.
+"""Intranet API client for GGP Laravel backend - aligned with API v1.0.1.
 
 This client supports both bot-level authentication (for public endpoints) and
 per-user authentication (for user-specific endpoints). After a user links their
@@ -12,6 +12,10 @@ from typing import Any
 
 from ggp_bot.intranet.errors import raise_for_api_error
 from ggp_bot.intranet.models import (
+    AdminBulkResult,
+    AdminHoliday,
+    AdminHolidayList,
+    AdminHolidaySummary,
     HealthStatus,
     PublicHoliday,
     HolidayEntitlement,
@@ -40,7 +44,7 @@ class IntranetClient:
     """
     
     # API version alignment
-    API_VERSION = "1.0.0"
+    API_VERSION = "1.0.1"
     BOT_VERSION = "1.0.3"
     
     # Track active client instances for graceful shutdown
@@ -370,6 +374,101 @@ class IntranetClient:
         payload = {"ids": ids}
         data = await self._post("/api/holidays/cancel-batch", payload)
         return data["data"]
+    
+    # ==================== Admin Holidays (Requires bot:admin:holiday scope) ====================
+    
+    async def get_admin_pending_holidays(self, page: int = 1, per_page: int = 20) -> AdminHolidayList:
+        """List all pending holiday requests (admin only).
+        
+        Args:
+            page: Page number for pagination
+            per_page: Items per page
+            
+        Returns:
+            AdminHolidayList with holidays, pagination, and summary
+        """
+        data = await self._get(f"/api/admin/holidays/pending?page={page}&per_page={per_page}")
+        response_data = data.get("data", {})
+        return AdminHolidayList(
+            holidays=[AdminHoliday(**h) for h in response_data.get("holidays", [])],
+            pagination=response_data.get("pagination"),
+            summary=AdminHolidaySummary(**response_data["summary"]) if response_data.get("summary") else None,
+        )
+    
+    async def bulk_approve_holidays(self, ids: str, note: str | None = None) -> AdminBulkResult:
+        """Bulk approve holiday requests.
+        
+        Args:
+            ids: Comma-separated IDs with optional ranges (e.g., "123, 125-127")
+            note: Optional approval note
+            
+        Returns:
+            AdminBulkResult with counts and total working days
+        """
+        payload = {"ids": ids, "notify_users": True}
+        if note:
+            payload["note"] = note
+        data = await self._post("/api/admin/holidays/bulk-approve", payload)
+        result = data.get("data", {})
+        return AdminBulkResult(
+            approved_count=result.get("approved_count", 0),
+            failed_count=result.get("failed_count", 0),
+            total_working_days=result.get("total_working_days", 0.0),
+            message=data.get("message"),
+        )
+    
+    async def approve_all_holidays(self) -> AdminBulkResult:
+        """Approve all pending holiday requests.
+        
+        Returns:
+            AdminBulkResult with counts and total working days
+        """
+        payload = {"notify_users": True}
+        data = await self._post("/api/admin/holidays/approve-all", payload)
+        result = data.get("data", {})
+        return AdminBulkResult(
+            approved_count=result.get("approved_count", 0),
+            total_working_days=result.get("total_working_days", 0.0),
+            message=data.get("message"),
+        )
+    
+    async def bulk_deny_holidays(self, ids: str, reason: str) -> AdminBulkResult:
+        """Bulk deny holiday requests.
+        
+        Args:
+            ids: Comma-separated IDs with optional ranges
+            reason: Required denial reason
+            
+        Returns:
+            AdminBulkResult with counts and total working days
+        """
+        payload = {"ids": ids, "reason": reason, "notify_users": True}
+        data = await self._post("/api/admin/holidays/bulk-deny", payload)
+        result = data.get("data", {})
+        return AdminBulkResult(
+            denied_count=result.get("denied_count", 0),
+            failed_count=result.get("failed_count", 0),
+            total_working_days=result.get("total_working_days", 0.0),
+            message=data.get("message"),
+        )
+    
+    async def deny_all_holidays(self, reason: str) -> AdminBulkResult:
+        """Deny all pending holiday requests.
+        
+        Args:
+            reason: Required denial reason
+            
+        Returns:
+            AdminBulkResult with counts and total working days
+        """
+        payload = {"reason": reason, "notify_users": True}
+        data = await self._post("/api/admin/holidays/deny-all", payload)
+        result = data.get("data", {})
+        return AdminBulkResult(
+            denied_count=result.get("denied_count", 0),
+            total_working_days=result.get("total_working_days", 0.0),
+            message=data.get("message"),
+        )
     
     # ==================== User & Directory ====================
     
