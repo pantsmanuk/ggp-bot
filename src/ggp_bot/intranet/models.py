@@ -225,3 +225,67 @@ class TimeClockStatus(BaseModel):
     def state_text(self) -> str:
         """Human-readable state text with Slack bold formatting (*text*)."""
         return "*in*" if self.is_clocked_in else "*out*"
+
+
+# ============================================================================
+# Admin Holiday Models
+# ============================================================================
+
+class AdminHolidayUser(BaseModel):
+    """User info embedded in admin holiday listings."""
+    id: int
+    name: str
+    email: str
+    department: str | None = None
+
+
+class AdminHoliday(BaseModel):
+    """Pending holiday request with user details — from /api/admin/holidays/pending."""
+    id: int
+    user_id: int
+    user: AdminHolidayUser
+    type: str = Field(default="holiday")
+    start: str
+    end: str
+    start_half_day: str | None = None
+    end_half_day: str | None = None
+    half_day: str | None = None
+    working_days: float
+    note: str | None = None
+    approved: bool
+    created_at: str | None = None
+
+    @property
+    def status(self) -> str:
+        return "approved" if self.approved else "pending"
+
+    @property
+    def start_date(self) -> str:
+        return self.start[:10] if self.start else ""
+
+    @property
+    def end_date(self) -> str:
+        return self.end[:10] if self.end else ""
+
+
+class AdminHolidaySummary(BaseModel):
+    """Summary stats for pending holiday list."""
+    total_pending: int
+    total_users: int
+    total_working_days: float
+
+
+class AdminHolidayList(BaseModel):
+    """Response wrapper for admin pending holiday list."""
+    holidays: list[AdminHoliday]
+    pagination: dict[str, Any] | None = None
+    summary: AdminHolidaySummary | None = None
+
+
+class AdminBulkResult(BaseModel):
+    """Result of bulk approve/deny operations."""
+    approved_count: int = 0
+    denied_count: int = 0
+    failed_count: int = 0
+    total_working_days: float = 0.0
+    message: str | None = None
