@@ -20,6 +20,7 @@ from ggp_bot.intranet.client import IntranetClient
 from ggp_bot.intranet.errors import (
     IntranetError,
     IntranetAuthError,
+    IntranetInvalidCredentialsError,
     IntranetScopeError,
     IntranetNotFoundError,
     IntranetInsufficientDaysError,
@@ -859,6 +860,13 @@ async def _handle_connect_subcommand(
                 logger.error(f"Account linking failed for user: {message}")
                 await respond(f":x: Linking failed: {message}")
                 
+        except IntranetInvalidCredentialsError as e:
+            logger.error(f"Invalid intranet credentials for {slack_user_id} (email={intranet_email!r}): {e}")
+            await respond(
+                ":x: *Invalid intranet credentials*\n"
+                "Please check your email and password.\n"
+                "Note: Email is case-sensitive. If copying from a password manager, check for extra spaces."
+            )
         except IntranetScopeError as e:
             logger.error(f"Bot lacks permission to link accounts: {e}")
             await respond(
