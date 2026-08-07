@@ -540,7 +540,7 @@ async def _handle_help_subcommand(
                 "• /ggp admin holiday approve-all\n"
                 "• /ggp admin holiday deny 123 Insufficient coverage\n"
                 "• /ggp admin holiday deny-all Company-wide freeze\n\n"
-                "_Note: Admin commands require an admin role and `bot:admin:holiday` scope for holiday and refresh commands._"
+                "_Note: Admin commands require an admin role. Holiday commands also require `bot:admin:holiday` scope._"
             )
             await respond(help_text)
             return
@@ -2541,9 +2541,6 @@ async def _handle_admin_refresh_subcommand(
     if not await _require_admin(respond, slack_user_id):
         return
 
-    if not await _require_admin_holiday_scope(respond, slack_user_id):
-        return
-
     target_user = args.strip()
     if not target_user:
         await respond(
@@ -2592,10 +2589,10 @@ async def _handle_admin_refresh_subcommand(
             )
 
     except IntranetScopeError as e:
-        logger.error(f"User {slack_user_id} lacks scope for token refresh: {e}")
+        logger.error(f"User {slack_user_id} denied token refresh: {e}")
         await respond(
             ":x: *Permission Denied*\n"
-            "Missing required scope: `bot:admin:holiday`"
+            "Requires admin role."
         )
     except IntranetError as e:
         logger.error(f"Failed to refresh token for admin {slack_user_id}: {e}")
