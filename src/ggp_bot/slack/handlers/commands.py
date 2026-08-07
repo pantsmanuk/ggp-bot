@@ -12,6 +12,7 @@ import logging
 import re
 
 from slack_bolt.async_app import AsyncAck, AsyncRespond
+from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ggp_bot.config import settings
@@ -708,62 +709,80 @@ async def _handle_not_linked(respond: AsyncRespond, slack_user_id: str | None = 
 
 async def _resolve_slack_id(identifier: str, client: AsyncWebClient) -> str | None:
     """Resolve a Slack user ID from mention, @username, or display name.
-    
+
     Supports:
     • <@U12345678> mention format
     • @username (with email and users_list fallback)
-    
+    • bare display name (e.g. "john")
+
     Args:
         identifier: Raw user identifier from command args
         client: Slack WebClient for API calls
-        
+
     Returns:
-        Slack user ID or None if not found
+        Slack user ID if exactly one match, None for zero or ambiguous
     """
     # Method 1: Extract from mention format <@U12345678> or <@U12345678|Name>
     mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', identifier)
     if mention_match:
         return mention_match.group(1)
-    
-    # Method 2: @username with email and users_list fallback
-    if client and identifier.startswith('@'):
-        username = identifier[1:].strip()
-        
-        # 2a: Email lookup
-        email_variations = [
-            f"{username}@ggpsystems.co.uk",
-            f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",
-        ]
-        for email in email_variations:
-            try:
-                info = await client.users_lookupByEmail(email=email)
-                if info and info.get('ok'):
-                    return info['user']['id']
-            except Exception:
-                continue
-        
-        # 2b: Fuzzy name search in workspace
+
+    if not client or not identifier.strip():
+        return None
+
+    # Normalise: strip optional @ prefix
+    username = identifier.lstrip('@').strip()
+    if not username:
+        return None
+
+    # 2a: Email lookup
+    email_variations = [
+        f"{username}@ggpsystems.co.uk",
+        f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",
+    ]
+    for email in email_variations:
         try:
-            users_list = await client.users_list()
-            if users_list and users_list.get('ok'):
-                search_lower = username.lower()
-                for user in users_list.get('members', []):
-                    if user.get('is_bot') or user.get('deleted'):
-                        continue
-                    profile = user.get('profile', {})
-                    display_name = (profile.get('display_name', '') or '').lower()
-                    real_name = (profile.get('real_name', '') or '').lower()
-                    name = (profile.get('name', '') or '').lower()
-                    if (search_lower in display_name or
-                        search_lower in real_name or
-                        search_lower in name or
-                        display_name in search_lower or
-                        real_name in search_lower or
-                        name in search_lower):
-                        return user['id']
+            info = await client.users_lookupByEmail(email=email)
+            if info and info.get('ok'):
+                return info['user']['id']
+        except SlackApiError as e:
+            if e.response.get('error') == 'users_not_found':
+                continue
+            logger.debug(f"_resolve_slack_id: Slack API error during email lookup: {e}", exc_info=True)
         except Exception:
-            pass
-    
+            logger.debug("_resolve_slack_id: unexpected error during email lookup", exc_info=True)
+
+    # 2b: Fuzzy name search in workspace
+    try:
+        users_list = await client.users_list()
+        if not (users_list and users_list.get('ok')):
+            return None
+
+        search_lower = username.lower()
+        matches: list[str] = []
+
+        for user in users_list.get('members', []):
+            if user.get('is_bot') or user.get('deleted'):
+                continue
+            profile = user.get('profile', {})
+            display_name = (profile.get('display_name', '') or '').lower()
+            real_name = (profile.get('real_name', '') or '').lower()
+            name = (profile.get('name', '') or '').lower()
+            if (search_lower in display_name or
+                search_lower in real_name or
+                search_lower in name or
+                display_name in search_lower or
+                real_name in search_lower or
+                name in search_lower):
+                matches.append(user['id'])
+
+        if len(matches) == 1:
+            return matches[0]
+    except SlackApiError as e:
+        logger.debug(f"_resolve_slack_id: Slack API error during users_list: {e}", exc_info=True)
+    except Exception:
+        logger.debug("_resolve_slack_id: unexpected error during users_list", exc_info=True)
+
     return None
 
 
