@@ -9,8 +9,10 @@ user-specific endpoints (holiday requests, profile) use the user's personal toke
 """
 
 import logging
+import re
 
 from slack_bolt.async_app import AsyncAck, AsyncRespond
+from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ggp_bot.config import settings
@@ -226,6 +228,11 @@ ADMIN_SUBCOMMANDS = {
         "description": "Admin holiday management (approve/deny)",
         "requires_auth": True,
         "params": "<pending|approve|approve-all|deny|deny-all>",
+    },
+    "refresh": {
+        "description": "Refresh a user's API token",
+        "requires_auth": True,
+        "params": "<@user>",
     },
 }
 
@@ -515,6 +522,7 @@ async def _handle_help_subcommand(
                 "• gc status - Show GC schedule and last run\n"
                 "• gc run - Manually trigger garbage collection\n"
                 "• integrity check - Validate all databases\n"
+                "• refresh <@user> - Refresh a user's API token\n"
                 "• holiday pending [page] - List pending holiday requests\n"
                 "• holiday approve <ids> [note] - Approve holiday requests\n"
                 "• holiday approve-all - Approve all pending holidays\n"
@@ -526,12 +534,13 @@ async def _handle_help_subcommand(
                 "• /ggp admin gc status\n"
                 "• /ggp admin gc run\n"
                 "• /ggp admin integrity check\n"
+                "• /ggp admin refresh @john.doe\n"
                 "• /ggp admin holiday pending\n"
                 "• /ggp admin holiday approve 123, 125-127\n"
                 "• /ggp admin holiday approve-all\n"
                 "• /ggp admin holiday deny 123 Insufficient coverage\n"
                 "• /ggp admin holiday deny-all Company-wide freeze\n\n"
-                "_Note: Admin commands require an admin role and `bot:admin:holiday` scope for holiday commands._"
+                "_Note: Admin commands require an admin role and `bot:admin:holiday` scope for holiday and refresh commands._"
             )
             await respond(help_text)
             return
@@ -696,6 +705,85 @@ async def _handle_not_linked(respond: AsyncRespond, slack_user_id: str | None = 
     # Log this user-facing error so admins can diagnose issues
     user_info = f" (user: {slack_user_id})" if slack_user_id else ""
     logger.error(f"User attempted command but account not linked{user_info}")
+
+
+async def _resolve_slack_id(identifier: str, client: AsyncWebClient) -> str | None:
+    """Resolve a Slack user ID from mention, @username, or display name.
+
+    Supports:
+    • <@U12345678> mention format
+    • @username (with email and users_list fallback)
+    • bare display name (e.g. "john")
+
+    Args:
+        identifier: Raw user identifier from command args
+        client: Slack WebClient for API calls
+
+    Returns:
+        Slack user ID if exactly one match, None for zero or ambiguous
+    """
+    # Method 1: Extract from mention format <@U12345678> or <@U12345678|Name>
+    mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', identifier)
+    if mention_match:
+        return mention_match.group(1)
+
+    if not client or not identifier.strip():
+        return None
+
+    # Normalise: strip optional @ prefix
+    username = identifier.lstrip('@').strip()
+    if not username:
+        return None
+
+    # 2a: Email lookup
+    email_variations = [
+        f"{username}@ggpsystems.co.uk",
+        f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",
+    ]
+    for email in email_variations:
+        try:
+            info = await client.users_lookupByEmail(email=email)
+            if info and info.get('ok'):
+                return info['user']['id']
+        except SlackApiError as e:
+            if e.response.get('error') == 'users_not_found':
+                continue
+            logger.debug(f"_resolve_slack_id: Slack API error during email lookup: {e}", exc_info=True)
+        except Exception:
+            logger.debug("_resolve_slack_id: unexpected error during email lookup", exc_info=True)
+
+    # 2b: Fuzzy name search in workspace
+    try:
+        users_list = await client.users_list()
+        if not (users_list and users_list.get('ok')):
+            return None
+
+        search_lower = username.lower()
+        matches: list[str] = []
+
+        for user in users_list.get('members', []):
+            if user.get('is_bot') or user.get('deleted'):
+                continue
+            profile = user.get('profile', {})
+            display_name = (profile.get('display_name', '') or '').lower()
+            real_name = (profile.get('real_name', '') or '').lower()
+            name = (profile.get('name', '') or '').lower()
+            if (search_lower in display_name or
+                search_lower in real_name or
+                search_lower in name or
+                display_name in search_lower or
+                real_name in search_lower or
+                name in search_lower):
+                matches.append(user['id'])
+
+        if len(matches) == 1:
+            return matches[0]
+    except SlackApiError as e:
+        logger.debug(f"_resolve_slack_id: Slack API error during users_list: {e}", exc_info=True)
+    except Exception:
+        logger.debug("_resolve_slack_id: unexpected error during users_list", exc_info=True)
+
+    return None
 
 
 # ============================================================================
@@ -981,70 +1069,7 @@ async def _handle_whois_subcommand(
         )
         return
     
-    target_slack_id = None
-    
-    # Method 1: Try to extract from mention format <@U12345678> or <@U12345678|Display Name>
-    import re
-    mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', target_user)
-    
-    if mention_match:
-        target_slack_id = mention_match.group(1)
-        logger.debug(f"whois: extracted slack_id from mention = '{target_slack_id}'")
-    
-    # Method 2: If no mention found but we have a client, try to resolve by username/display name
-    elif client and target_user.startswith('@'):
-        username = target_user[1:].strip()  # Remove the @ prefix
-        logger.debug(f"whois: trying to resolve username = '{username}'")
-        
-        try:
-            # Method 2a: Try to look up user by email using Slack API
-            # Common email patterns: firstname.lastname, firstname@company, etc.
-            email_variations = [
-                f"{username}@ggpsystems.co.uk",
-                f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",  # Handle spaces vs dots
-            ]
-            
-            for email in email_variations:
-                try:
-                    logger.debug(f"whois: trying email lookup: {email}")
-                    slack_user_info = await client.users_lookupByEmail(email=email)
-                    if slack_user_info and slack_user_info.get('ok'):
-                        target_slack_id = slack_user_info['user']['id']
-                        logger.debug(f"whois: resolved via email lookup = '{target_slack_id}'")
-                        break
-                except Exception as e:
-                    logger.debug(f"whois: email lookup failed for {email}: {e}")
-                    continue
-            
-            if not target_slack_id:
-                # Method 2b: Try searching by display name/real name in workspace
-                logger.debug(f"whois: trying users_list search")
-                users_list = await client.users_list()
-                if users_list and users_list.get('ok'):
-                    search_lower = username.lower()
-                    for user in users_list.get('members', []):
-                        if user.get('is_bot') or user.get('deleted'):
-                            continue
-                            
-                        profile = user.get('profile', {})
-                        display_name = (profile.get('display_name', '') or '').lower()
-                        real_name = (profile.get('real_name', '') or '').lower()
-                        name = (profile.get('name', '') or '').lower()  # username
-                        
-                        logger.debug(f"whois: checking user - display_name='{display_name}', real_name='{real_name}', name='{name}'")
-                        
-                        # Match against various fields (case insensitive, partial matches)
-                        if (search_lower in display_name or 
-                            search_lower in real_name or
-                            search_lower in name or
-                            display_name in search_lower or
-                            real_name in search_lower or
-                            name in search_lower):
-                            target_slack_id = user['id']
-                            logger.debug(f"whois: resolved via display name search = '{target_slack_id}' (matched: display='{display_name}', real='{real_name}')")
-                            break
-        except Exception as e:
-            logger.debug(f"whois: Slack API resolution failed: {e}")
+    target_slack_id = await _resolve_slack_id(target_user, client)
     
     if not target_slack_id:
         await respond(
@@ -2337,67 +2362,7 @@ async def _handle_admin_cache_clear_subcommand(
         )
         return
     
-    target_slack_id = None
-
-    # Method 1: Try to extract from mention format <@U12345678> or <@U12345678|Display Name>
-    import re
-    mention_match = re.search(r'<@([A-Z0-9]+)(?:\|[^>]*)?>', target_user)
-
-    if mention_match:
-        target_slack_id = mention_match.group(1)
-        logger.debug(f"admin cache clear: extracted slack_id from mention = '{target_slack_id}'")
-
-    # Method 2: If no mention found but we have a client, try to resolve by username/display name
-    elif client and target_user.startswith('@'):
-        username = target_user[1:].strip()  # Remove the @ prefix
-        logger.debug(f"admin cache clear: trying to resolve username = '{username}'")
-
-        try:
-            # Method 2a: Try to look up user by email using Slack API
-            email_variations = [
-                f"{username}@ggpsystems.co.uk",
-                f"{username.replace('.', ' ').replace(' ', '.')}@ggpsystems.co.uk",
-            ]
-
-            for email in email_variations:
-                try:
-                    logger.debug(f"admin cache clear: trying email lookup: {email}")
-                    slack_user_info = await client.users_lookupByEmail(email=email)
-                    if slack_user_info and slack_user_info.get('ok'):
-                        target_slack_id = slack_user_info['user']['id']
-                        logger.debug(f"admin cache clear: resolved via email lookup = '{target_slack_id}'")
-                        break
-                except Exception as e:
-                    logger.debug(f"admin cache clear: email lookup failed for {email}: {e}")
-                    continue
-
-            if not target_slack_id:
-                # Method 2b: Try searching by display name/real name in workspace
-                logger.debug(f"admin cache clear: trying users_list search")
-                users_list = await client.users_list()
-                if users_list and users_list.get('ok'):
-                    search_lower = username.lower()
-                    for user in users_list.get('members', []):
-                        if user.get('is_bot') or user.get('deleted'):
-                            continue
-
-                        profile = user.get('profile', {})
-                        display_name = (profile.get('display_name', '') or '').lower()
-                        real_name = (profile.get('real_name', '') or '').lower()
-                        name = (profile.get('name', '') or '').lower()
-
-                        # Match against various fields (case insensitive, partial matches)
-                        if (search_lower in display_name or
-                            search_lower in real_name or
-                            search_lower in name or
-                            display_name in search_lower or
-                            real_name in search_lower or
-                            name in search_lower):
-                            target_slack_id = user['id']
-                            logger.debug(f"admin cache clear: resolved via display name search = '{target_slack_id}'")
-                            break
-        except Exception as e:
-            logger.debug(f"admin cache clear: Slack API resolution failed: {e}")
+    target_slack_id = await _resolve_slack_id(target_user, client)
 
     if not target_slack_id:
         await respond(
@@ -2564,6 +2529,80 @@ async def _handle_admin_integrity_check_subcommand(
     except Exception as e:
         logger.error(f"ADMIN: Integrity check failed: {e}")
         await respond(f":x: Integrity check failed: {e}")
+
+
+async def _handle_admin_refresh_subcommand(
+    respond: AsyncRespond,
+    slack_user_id: str,
+    args: str,
+    client: AsyncWebClient | None = None,
+) -> None:
+    """Handle admin refresh — force token refresh for a linked user."""
+    if not await _require_admin(respond, slack_user_id):
+        return
+
+    if not await _require_admin_holiday_scope(respond, slack_user_id):
+        return
+
+    target_user = args.strip()
+    if not target_user:
+        await respond(
+            ":warning: *Usage:* `/ggp admin refresh <@user>`\n"
+            "Example: `/ggp admin refresh @john.doe`\n\n"
+            "Refreshes the user's API token with their current role-based scopes."
+        )
+        return
+
+    target_slack_id = await _resolve_slack_id(target_user, client)
+    if not target_slack_id:
+        await respond(
+            ":x: *Could not identify user*\n"
+            f"Received: `{target_user}`\n\n"
+            "Please use @mention to specify the user.\n"
+            "Example: `/ggp admin refresh @john.doe`"
+        )
+        return
+
+    try:
+        async with await IntranetClient.for_user(slack_user_id) as intranet:
+            result = await intranet.refresh_token(target_slack_id)
+
+            api_token = result.get("api_token")
+            scopes = result.get("token_scopes", [])
+            name = result.get("name", "Unknown")
+
+            if not api_token:
+                await respond(":x: *Token refresh failed:* No token returned by API.")
+                return
+
+            token_storage.save_token(
+                slack_user_id=target_slack_id,
+                token=api_token,
+                scopes=scopes,
+            )
+
+            scope_text = ", ".join(scopes[:5])
+            if len(scopes) > 5:
+                scope_text += f" and {len(scopes) - 5} more"
+
+            await respond(
+                f":white_check_mark: *Token refreshed for {name}*\n"
+                f"• Slack ID: {target_slack_id}\n"
+                f"• Scopes: {scope_text}"
+            )
+
+    except IntranetScopeError as e:
+        logger.error(f"User {slack_user_id} lacks scope for token refresh: {e}")
+        await respond(
+            ":x: *Permission Denied*\n"
+            "Missing required scope: `bot:admin:holiday`"
+        )
+    except IntranetError as e:
+        logger.error(f"Failed to refresh token for admin {slack_user_id}: {e}")
+        await respond(f":x: Failed to refresh token: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error refreshing token for admin {slack_user_id}: {e}", exc_info=True)
+        await respond(f":x: Unexpected error: {e}")
 
 
 async def _handle_admin_holiday_pending_subcommand(
@@ -2963,6 +3002,9 @@ async def _handle_admin_subcommand(
                 f"Run `/ggp help admin` for more details."
             )
     
+    elif subcommand == "refresh":
+        await _handle_admin_refresh_subcommand(respond, slack_user_id, sub_args, client)
+    
     elif subcommand == "holiday":
         await _handle_admin_holiday_subcommand(respond, slack_user_id, sub_args, client)
     
@@ -2980,6 +3022,7 @@ async def _handle_admin_subcommand(
                 f"• /ggp admin cache <clear|status> - Token cache management\n"
                 f"• /ggp admin gc <status|run> - Garbage collection control\n"
                 f"• /ggp admin integrity check - Database integrity checking\n"
+                f"• /ggp admin refresh <@user> - Refresh a user's API token\n"
                 f"• /ggp admin holiday <pending|approve|approve-all|deny|deny-all> - Holiday management\n\n"
                 f"Run `/ggp help admin` for more details."
             )
@@ -2990,6 +3033,7 @@ async def _handle_admin_subcommand(
                 f"• /ggp admin cache <clear|status> - Token cache management\n"
                 f"• /ggp admin gc <status|run> - Garbage collection control\n"
                 f"• /ggp admin integrity check - Database integrity checking\n"
+                f"• /ggp admin refresh <@user> - Refresh a user's API token\n"
                 f"• /ggp admin holiday <pending|approve|approve-all|deny|deny-all> - Holiday management\n\n"
                 f"Run `/ggp help admin` for more details."
             )

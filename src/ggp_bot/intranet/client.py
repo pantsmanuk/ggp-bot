@@ -281,6 +281,21 @@ class IntranetClient:
         data = await self._post("/api/auth/verify", {})
         return data.get("data", {})
     
+    async def refresh_token(self, target_slack_user_id: str) -> dict[str, Any]:
+        """Refresh Slack API token for a linked user.
+        
+        Revokes existing tokens and creates a new one with current role-based
+        scopes. Used when a user's role has changed in the intranet.
+        
+        Args:
+            target_slack_user_id: Slack user ID to refresh
+            
+        Returns:
+            API response data with api_token, token_scopes, name, etc.
+        """
+        data = await self._post("/api/auth/refresh-token", {"slack_user_id": target_slack_user_id})
+        return data.get("data", {})
+    
     # ==================== Holidays (Requires Auth) ====================
     
     async def get_holiday_entitlement(self) -> HolidayEntitlement:

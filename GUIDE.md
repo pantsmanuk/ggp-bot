@@ -365,6 +365,7 @@ Use @mentions for:
 | `/ggp holiday cancel` | Cancel booking | Yes |
 | `/ggp whoami` | Your profile | Yes |
 | `/ggp whois @user` | Someone's profile | Yes |
+| `/ggp admin refresh @user` | Refresh user's API token (admin only) | Yes |
 
 ---
 
