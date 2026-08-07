@@ -57,6 +57,7 @@ Shows available commands. Add a command name for detailed help on that specific 
 /ggp help holiday
 /ggp help clock in
 /ggp help directory search
+/ggp help examples
 ```
 
 ---
@@ -365,6 +366,8 @@ Use @mentions for:
 | `/ggp holiday cancel` | Cancel booking | Yes |
 | `/ggp whoami` | Your profile | Yes |
 | `/ggp whois @user` | Someone's profile | Yes |
+| `/ggp admin help` | Show admin commands (admin only) | Yes |
+| `/ggp admin holiday help` | Show admin holiday commands (admin only) | Yes |
 | `/ggp admin refresh @user` | Refresh user's API token (admin only) | Yes |
 
 ---
@@ -373,6 +376,8 @@ Use @mentions for:
 
 - Use `/ggp help` to see all available commands
 - Use `/ggp help <command>` for detailed help on a specific command
+- Use `/ggp help examples` for command examples
+- Use `/ggp admin help` for admin commands (admin only)
 - Mention `@ggp-bot help` in any channel for assistance
 
 If you encounter issues or have questions, please contact your system administrator.

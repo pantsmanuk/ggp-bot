@@ -503,46 +503,26 @@ async def _handle_help_subcommand(
             await respond(help_text)
             return
         
-        # Check for admin as a top-level help topic
-        if topic_lower == "admin":
-            # Only show admin help to admin users
-            if not await _check_is_admin_silent(slack_user_id):
-                await respond(
-                    ":warning: Unknown command 'admin'.\n\n"
-                    f"Run `/ggp help` to see all available commands."
-                )
-                return
-            
-            help_text = (
-                "*/ggp admin [subcommand]*\n"
-                "Administrative commands for bot management.\n\n"
-                "*Subcommands:*\n"
-                "• cache clear <@user> - Remove user from token cache\n"
-                "• cache status - Show token cache statistics\n"
-                "• gc status - Show GC schedule and last run\n"
-                "• gc run - Manually trigger garbage collection\n"
-                "• integrity check - Validate all databases\n"
-                "• refresh <@user> - Refresh a user's API token\n"
-                "• holiday pending [page] - List pending holiday requests\n"
-                "• holiday approve <ids> [note] - Approve holiday requests\n"
-                "• holiday approve-all - Approve all pending holidays\n"
-                "• holiday deny <ids> [reason] - Deny holiday requests\n"
-                "• holiday deny-all [reason] - Deny all pending holidays\n\n"
-                "*Examples:*\n"
-                "• /ggp admin cache clear @john.doe\n"
-                "• /ggp admin cache status\n"
-                "• /ggp admin gc status\n"
-                "• /ggp admin gc run\n"
-                "• /ggp admin integrity check\n"
-                "• /ggp admin refresh @john.doe\n"
-                "• /ggp admin holiday pending\n"
-                "• /ggp admin holiday approve 123, 125-127\n"
-                "• /ggp admin holiday approve-all\n"
-                "• /ggp admin holiday deny 123 Insufficient coverage\n"
-                "• /ggp admin holiday deny-all Company-wide freeze\n\n"
-                "_Note: Admin commands require an admin role. Holiday commands also require `bot:admin:holiday` scope._"
+        # Examples topic
+        if topic_lower == "examples":
+            await respond(
+                "*Command Examples*\n\n"
+                "• /ggp holiday new 23/04/2026 Vacation\n"
+                "• /ggp holiday new 23/04/2026 AM Doctor\n"
+                "• /ggp holiday cancel 123\n"
+                "• /ggp holiday cancel 150-155\n"
+                "• /ggp directory search john\n"
+                "• /ggp whois @john.doe\n"
+                "• /ggp clock in\n"
+                "• /ggp clock in force Working late\n"
+                "• /ggp clock out Working late\n"
+                "• /ggp clock lunch\n"
+                "• /ggp clock today\n"
+                "• /ggp in\n"
+                "• /ggp in force\n"
+                "• /ggp out\n"
+                "• /ggp lunch"
             )
-            await respond(help_text)
             return
         
         # Unknown topic
@@ -584,31 +564,12 @@ async def _handle_help_subcommand(
         lines.append("• /ggp out - Alias for `/ggp clock out`")
         lines.append("• /ggp lunch - Alias for `/ggp clock lunch`")
         
-        # Only show admin commands to admin users
+        lines.append("\n_Run `/ggp help examples` for command examples._")
+        
+        # Only show admin hint to admin users
         is_admin = await _check_is_admin_silent(slack_user_id)
         if is_admin:
-            lines.append("\n*Admin commands:*")
-            for name, meta in ADMIN_SUBCOMMANDS.items():
-                lines.append(_format_command_help(f"admin {name}", meta))
-        
-        lines.append(
-            "\n*Examples:*\n"
-            "• /ggp holiday new 23/04/2026 Vacation\n"
-            "• /ggp holiday new 23/04/2026 AM Doctor\n"
-            "• /ggp holiday cancel 123\n"
-            "• /ggp holiday cancel 150-155\n"
-            "• /ggp directory search john\n"
-            "• /ggp whois @john.doe\n"
-            "• /ggp clock in\n"
-            "• /ggp clock in force Working late\n"
-            "• /ggp clock out Working late\n"
-            "• /ggp clock lunch\n"
-            "• /ggp clock today\n"
-            "• /ggp in\n"
-            "• /ggp in force\n"
-            "• /ggp out\n"
-            "• /ggp lunch"
-        )
+            lines.append("\n_Run `/ggp admin help` for admin commands._")
     else:
         lines.append(
             "\n_Run `/ggp connect <email> <password>` to link your account "
@@ -2890,6 +2851,26 @@ async def _handle_admin_holiday_subcommand(
         )
         return
 
+    if subcommand == "help":
+        await respond(
+            "*/ggp admin holiday [subcommand]*\n"
+            "Admin holiday management commands.\n\n"
+            "*Subcommands:*\n"
+            "• pending [page] - List pending holiday requests\n"
+            "• approve <ids> [note] - Approve holiday requests\n"
+            "• approve-all - Approve all pending holidays\n"
+            "• deny <ids> [reason] - Deny holiday requests\n"
+            "• deny-all [reason] - Deny all pending holidays\n\n"
+            "*Examples:*\n"
+            "• /ggp admin holiday pending\n"
+            "• /ggp admin holiday approve 123, 125-127\n"
+            "• /ggp admin holiday approve-all\n"
+            "• /ggp admin holiday deny 123 Insufficient coverage\n"
+            "• /ggp admin holiday deny-all Company-wide freeze\n\n"
+            "_Note: Requires admin role and `bot:admin:holiday` scope._"
+        )
+        return
+
     if subcommand == "pending":
         await _handle_admin_holiday_pending_subcommand(respond, slack_user_id, sub_args, client)
     elif subcommand == "approve":
@@ -2947,6 +2928,29 @@ async def _handle_admin_subcommand(
     subcommand = parts[0].lower() if parts else ""
     sub_args = " ".join(parts[1:]) if len(parts) > 1 else ""
     
+    if subcommand == "help":
+        await respond(
+            "*/ggp admin [subcommand]*\n"
+            "Administrative commands for bot management.\n\n"
+            "*Subcommands:*\n"
+            "• cache clear <@user> - Remove user from token cache\n"
+            "• cache status - Show token cache statistics\n"
+            "• gc status - Show GC schedule and last run\n"
+            "• gc run - Manually trigger garbage collection\n"
+            "• integrity check - Validate all databases\n"
+            "• refresh <@user> - Refresh a user's API token\n\n"
+            "*Examples:*\n"
+            "• /ggp admin cache clear @john.doe\n"
+            "• /ggp admin cache status\n"
+            "• /ggp admin gc status\n"
+            "• /ggp admin gc run\n"
+            "• /ggp admin integrity check\n"
+            "• /ggp admin refresh @john.doe\n\n"
+            "_Note: Admin commands require an admin role._\n\n"
+            "Run `/ggp admin holiday help` for holiday admin commands."
+        )
+        return
+
     if subcommand == "cache":
         # Parse cache sub-subcommand
         cache_parts = sub_args.split(None, 1)
@@ -2963,7 +2967,7 @@ async def _handle_admin_subcommand(
                 f"*Available cache commands:*\n"
                 f"• /ggp admin cache clear <@user> - Remove user from token cache\n"
                 f"• /ggp admin cache status - Show token cache statistics\n\n"
-                f"Run `/ggp help admin` for more details."
+                f"Run `/ggp admin help` for more details."
             )
     
     elif subcommand == "gc":
@@ -2981,7 +2985,7 @@ async def _handle_admin_subcommand(
                 f"*Available gc commands:*\n"
                 f"• /ggp admin gc status - Show GC schedule and last run\n"
                 f"• /ggp admin gc run - Manually trigger garbage collection\n\n"
-                f"Run `/ggp help admin` for more details."
+                f"Run `/ggp admin help` for more details."
             )
     
     elif subcommand == "integrity":
@@ -2996,7 +3000,7 @@ async def _handle_admin_subcommand(
                 f":warning: Unknown integrity command '{integrity_cmd}'.\n\n"
                 f"*Available integrity commands:*\n"
                 f"• /ggp admin integrity check - Validate all databases\n\n"
-                f"Run `/ggp help admin` for more details."
+                f"Run `/ggp admin help` for more details."
             )
     
     elif subcommand == "refresh":
@@ -3021,7 +3025,7 @@ async def _handle_admin_subcommand(
                 f"• /ggp admin integrity check - Database integrity checking\n"
                 f"• /ggp admin refresh <@user> - Refresh a user's API token\n"
                 f"• /ggp admin holiday <pending|approve|approve-all|deny|deny-all> - Holiday management\n\n"
-                f"Run `/ggp help admin` for more details."
+                f"Run `/ggp admin help` for more details."
             )
         else:
             await respond(
@@ -3032,7 +3036,7 @@ async def _handle_admin_subcommand(
                 f"• /ggp admin integrity check - Database integrity checking\n"
                 f"• /ggp admin refresh <@user> - Refresh a user's API token\n"
                 f"• /ggp admin holiday <pending|approve|approve-all|deny|deny-all> - Holiday management\n\n"
-                f"Run `/ggp help admin` for more details."
+                f"Run `/ggp admin help` for more details."
             )
 
 
