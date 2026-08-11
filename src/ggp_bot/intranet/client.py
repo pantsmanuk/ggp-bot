@@ -10,7 +10,7 @@ import httpx
 import logging
 from typing import Any
 
-from ggp_bot.intranet.errors import raise_for_api_error
+from ggp_bot.intranet.errors import IntranetAuthError, raise_for_api_error
 from ggp_bot.intranet.models import (
     AdminBulkResult,
     AdminHoliday,
@@ -188,6 +188,11 @@ class IntranetClient:
         
         response = await self.client.get(path)
         
+        if response.status_code == 401:
+            raise IntranetAuthError(
+                "Authentication failed. Please run `/ggp connect` again."
+            )
+        
         if response.status_code >= 400:
             try:
                 data = response.json()
@@ -207,6 +212,11 @@ class IntranetClient:
         
         response = await self.client.post(path, json=json_data)
         
+        if response.status_code == 401:
+            raise IntranetAuthError(
+                "Authentication failed. Please run `/ggp connect` again."
+            )
+        
         if response.status_code >= 400:
             try:
                 data = response.json()
@@ -225,6 +235,11 @@ class IntranetClient:
             raise ValueError("Authentication required but no token provided")
         
         response = await self.client.delete(path)
+        
+        if response.status_code == 401:
+            raise IntranetAuthError(
+                "Authentication failed. Please run `/ggp connect` again."
+            )
         
         if response.status_code >= 400:
             try:
