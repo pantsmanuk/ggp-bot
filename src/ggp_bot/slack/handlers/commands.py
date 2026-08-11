@@ -10,6 +10,7 @@ user-specific endpoints (holiday requests, profile) use the user's personal toke
 
 import logging
 import re
+import socket
 
 from slack_bolt.async_app import AsyncAck, AsyncRespond
 from slack_sdk.errors import SlackApiError
@@ -2367,6 +2368,7 @@ async def _handle_admin_cache_status_subcommand(
         stats = token_storage.get_stats()
         
         lines = ["*Token Cache Status* :key:"]
+        lines.append(f"• Host: {socket.gethostname()}")
         lines.append(f"• Total tokens: {stats.get('total_tokens', 0)}")
         lines.append(f"• Database: {stats.get('db_path', 'N/A')}")
         lines.append(f"• Encrypted: {'Yes' if stats.get('encrypted') else 'No'}")
