@@ -93,7 +93,7 @@ cp .env.example .env
 ggp-bot
 ```
 
-See [DEPLOY.md](DEPLOY.md) for production deployment instructions (systemd service on Ubuntu 24.04).
+See [DEPLOY.md](docs/architecture/DEPLOY.md) for production deployment instructions (systemd service on Ubuntu 24.04).
 
 ## Environment Variables
 

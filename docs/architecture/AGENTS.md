@@ -25,4 +25,4 @@ Scribe docs for the GGP Intranet API (the backend this bot consumes):
 | `src/ggp_bot/slack/handlers/commands.py` | Slash command dispatchers |
 | `src/ggp_bot/slack/handlers/mentions.py` | @mention NL handlers |
 | `src/ggp_bot/intranet/token_storage.py` | Encrypted token persistence |
-| `GUIDE.md` | User-facing command reference |
+| `docs/user/GUIDE.md` | User-facing command reference |
