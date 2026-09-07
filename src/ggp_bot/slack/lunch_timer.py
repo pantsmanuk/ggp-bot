@@ -5,17 +5,15 @@ including DM warnings at 55, 59, and 60 minutes.
 """
 
 import asyncio
-import sqlite3
 import logging
-from datetime import datetime, timedelta
+import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ggp_bot.config import settings
-from ggp_bot.intranet.token_storage import token_storage
-
 
 logger = logging.getLogger(__name__)
 

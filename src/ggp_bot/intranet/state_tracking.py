@@ -5,13 +5,12 @@ we only post to #Attendance when the state actually changes (in -> out or out ->
 not on every clock command (which may be idempotent).
 """
 
-import sqlite3
 import logging
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 from ggp_bot.config import settings
-
 
 logger = logging.getLogger(__name__)
 

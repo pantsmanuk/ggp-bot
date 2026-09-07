@@ -8,8 +8,8 @@ import asyncio
 
 import pytest
 
-from ggp_bot.intranet import IntranetClient
 from ggp_bot.config import settings
+from ggp_bot.intranet import IntranetClient
 
 
 @pytest.mark.asyncio

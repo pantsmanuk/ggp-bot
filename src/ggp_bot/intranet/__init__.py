@@ -11,35 +11,35 @@ the Slack account linking process via /api/auth/slack-link.
 """
 
 from ggp_bot.intranet.client import IntranetClient
-from ggp_bot.intranet.token_storage import TokenStorage, UserToken, token_storage
 from ggp_bot.intranet.errors import (
-    IntranetError,
-    IntranetAuthError,
-    IntranetTokenExpiredError,
-    IntranetInvalidCredentialsError,
-    IntranetScopeError,
-    IntranetRateLimitError,
-    IntranetSlackRateLimitError,
-    IntranetValidationError,
-    IntranetNotFoundError,
-    IntranetInsufficientDaysError,
-    IntranetOverlappingAbsenceError,
-    IntranetSlackNotLinkedError,
-    IntranetDuplicateLinkError,
-    IntranetServerError,
     ERROR_CODE_MAP,
+    IntranetAuthError,
+    IntranetDuplicateLinkError,
+    IntranetError,
+    IntranetInsufficientDaysError,
+    IntranetInvalidCredentialsError,
+    IntranetNotFoundError,
+    IntranetOverlappingAbsenceError,
+    IntranetRateLimitError,
+    IntranetScopeError,
+    IntranetServerError,
+    IntranetSlackNotLinkedError,
+    IntranetSlackRateLimitError,
+    IntranetTokenExpiredError,
+    IntranetValidationError,
 )
 from ggp_bot.intranet.models import (
+    ApiErrorDetail,
     ApiResponse,
     HealthStatus,
-    PublicHoliday,
     HolidayEntitlement,
     HolidayRequest,
+    PublicHoliday,
     UserProfile,
     UserSearchResult,
     UserStatus,
-    ApiErrorDetail,
 )
+from ggp_bot.intranet.token_storage import TokenStorage, UserToken, token_storage
 
 __all__ = [
     # Client

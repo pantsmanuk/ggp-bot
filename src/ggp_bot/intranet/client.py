@@ -6,10 +6,12 @@ Slack account via /connect, they receive their own Bearer token which is stored
 and used for subsequent authenticated requests.
 """
 
-import httpx
 import logging
 from typing import Any
 
+import httpx
+
+from ggp_bot.config import settings
 from ggp_bot.intranet.errors import IntranetAuthError, raise_for_api_error
 from ggp_bot.intranet.models import (
     AdminBulkResult,
@@ -17,14 +19,13 @@ from ggp_bot.intranet.models import (
     AdminHolidayList,
     AdminHolidaySummary,
     HealthStatus,
-    PublicHoliday,
     HolidayEntitlement,
     HolidayRequest,
+    PublicHoliday,
     UserProfile,
     UserSearchResult,
 )
-from ggp_bot.intranet.token_storage import token_storage, UserToken
-from ggp_bot.config import settings
+from ggp_bot.intranet.token_storage import UserToken, token_storage
 
 # Logger for this module
 logger = logging.getLogger(__name__)
@@ -655,7 +656,7 @@ class IntranetClient:
                 scopes=scopes,
                 expires_at=expires_at
             )
-            logger.debug(f"Token saved to storage")
+            logger.debug("Token saved to storage")
         else:
             logger.debug(f"No api_token found in response. success={data.get('success')}, api_token_present={api_token is not None}")
         
