@@ -4,14 +4,13 @@ These tests verify that /ggp clock in and /ggp in warn users on public holidays
 unless they explicitly use the `force` flag.
 """
 
-import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ggp_bot.slack.handlers.commands import _handle_clock_in_out_subcommand
 from ggp_bot.intranet.models import PublicHoliday
+from ggp_bot.slack.handlers.commands import _handle_clock_in_out_subcommand
 
 
 @pytest.fixture

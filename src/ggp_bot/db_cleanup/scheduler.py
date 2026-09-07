@@ -9,17 +9,14 @@ Follows the LunchTimerManager pattern with background asyncio tasks.
 """
 
 import asyncio
-import sqlite3
 import logging
+import sqlite3
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Optional
 
-from ggp_bot.config import settings
+from ggp_bot.intranet.state_tracking import timeclock_tracker
 from ggp_bot.intranet.token_storage import token_storage
 from ggp_bot.slack.lunch_timer import lunch_timer_manager
-from ggp_bot.intranet.state_tracking import timeclock_tracker
-
 
 logger = logging.getLogger(__name__)
 

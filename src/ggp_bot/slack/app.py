@@ -3,15 +3,14 @@
 import asyncio
 import logging
 
-from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
+from slack_bolt.async_app import AsyncApp
 
 from ggp_bot.config import settings
+from ggp_bot.db_cleanup.scheduler import cleanup_scheduler
 from ggp_bot.slack.handlers.commands import handle_ggp_command
 from ggp_bot.slack.handlers.mentions import handle_mention
 from ggp_bot.slack.lunch_timer import lunch_timer_manager
-from ggp_bot.db_cleanup.scheduler import cleanup_scheduler
-
 
 logger = logging.getLogger(__name__)
 

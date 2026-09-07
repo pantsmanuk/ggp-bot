@@ -8,27 +8,19 @@ Supports both @ggp-bot (primary) and @ggpbot (alias) mentions.
 
 import logging
 import re
-from typing import Callable, Awaitable
 
 from slack_bolt.async_app import AsyncAck, AsyncSay
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ggp_bot.slack.handlers.commands import (
     _check_user_linked,
-    _handle_not_linked,
-    _handle_holiday_list_subcommand,
-    _handle_holiday_balance_subcommand,
-    _handle_clock_status_subcommand,
-    _handle_whois_subcommand,
     _handle_bank_holiday_subcommand,
+    _handle_clock_status_subcommand,
     _handle_directory_search_subcommand,
+    _handle_holiday_balance_subcommand,
+    _handle_holiday_list_subcommand,
     _handle_whoami_subcommand,
-)
-from ggp_bot.intranet.client import IntranetClient
-from ggp_bot.intranet.errors import (
-    IntranetError,
-    IntranetAuthError,
-    IntranetSlackNotLinkedError,
+    _handle_whois_subcommand,
 )
 
 logger = logging.getLogger(__name__)

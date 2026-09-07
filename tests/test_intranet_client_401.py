@@ -5,8 +5,9 @@ IntranetAuthError with a user-friendly reconnect hint, while non-401
 errors continue through the existing generic error path.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from ggp_bot.intranet.client import IntranetClient
 from ggp_bot.intranet.errors import IntranetAuthError, IntranetError

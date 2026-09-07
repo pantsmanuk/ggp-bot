@@ -16,23 +16,20 @@ from slack_bolt.async_app import AsyncAck, AsyncRespond
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_client import AsyncWebClient
 
-from ggp_bot.config import settings
-
 logger = logging.getLogger(__name__)
+from ggp_bot.db_cleanup.scheduler import cleanup_scheduler
 from ggp_bot.intranet.client import IntranetClient
 from ggp_bot.intranet.errors import (
-    IntranetError,
     IntranetAuthError,
-    IntranetInvalidCredentialsError,
-    IntranetScopeError,
-    IntranetNotFoundError,
+    IntranetError,
     IntranetInsufficientDaysError,
+    IntranetInvalidCredentialsError,
+    IntranetNotFoundError,
+    IntranetScopeError,
     IntranetSlackNotLinkedError,
 )
 from ggp_bot.intranet.token_storage import token_storage
-from ggp_bot.db_cleanup.scheduler import cleanup_scheduler
 from ggp_bot.utils.date_parser import parse_holiday_request
-
 
 # ============================================================================
 # Levenshtein Distance Helper for "Did You Mean?" Suggestions
@@ -961,7 +958,7 @@ async def _handle_whoami_subcommand(
             # Use the new by-slack-id endpoint (API v1.0.0)
             user = await intranet.get_user_by_slack_id(slack_user_id)
             
-            lines = [f"*Your Profile* :bust_in_silhouette:"]
+            lines = ["*Your Profile* :bust_in_silhouette:"]
             lines.append(f"• Name: {user.name}")
             lines.append(f"• Email: {user.email}")
             if user.department:
@@ -985,14 +982,14 @@ async def _handle_whoami_subcommand(
     except IntranetSlackNotLinkedError:
         logger.error(f"User {slack_user_id} attempted whoami but account not linked to intranet")
         await respond(
-            f":x: *Your Slack account is not linked to the intranet.*\n"
-            f"Please run `/ggp connect <intranet-email> <password>` to link your accounts."
+            ":x: *Your Slack account is not linked to the intranet.*\n"
+            "Please run `/ggp connect <intranet-email> <password>` to link your accounts."
         )
     except IntranetAuthError as e:
         logger.error(f"Authentication failed for user {slack_user_id} during whoami: {e}")
         await respond(
-            f":x: *Authentication Failed*\n"
-            f"Your session may have expired. Please run `/ggp connect` again to re-link your account."
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
         logger.error(f"Failed to fetch profile for user {slack_user_id}: {e}")
@@ -1095,20 +1092,20 @@ async def _handle_whois_subcommand(
     except IntranetSlackNotLinkedError:
         logger.error(f"Target Slack user not linked to intranet during whois lookup by {slack_user_id}")
         await respond(
-            f":x: *That Slack user is not linked to the intranet.*\n"
-            f"The user may need to run `/ggp connect` to link their account."
+            ":x: *That Slack user is not linked to the intranet.*\n"
+            "The user may need to run `/ggp connect` to link their account."
         )
     except IntranetNotFoundError:
         logger.error(f"User not found during whois lookup by {slack_user_id}")
         await respond(
-            f":x: *User not found*\n"
-            f"Could not find a user with that Slack ID in the intranet."
+            ":x: *User not found*\n"
+            "Could not find a user with that Slack ID in the intranet."
         )
     except IntranetAuthError as e:
         logger.error(f"Authentication failed for user {slack_user_id} during whois: {e}")
         await respond(
-            f":x: *Authentication Failed*\n"
-            f"Your session may have expired. Please run `/ggp connect` again to re-link your account."
+            ":x: *Authentication Failed*\n"
+            "Your session may have expired. Please run `/ggp connect` again to re-link your account."
         )
     except IntranetError as e:
         logger.error(f"Failed to fetch user info during whois by {slack_user_id}: {e}")
@@ -1461,7 +1458,7 @@ async def _handle_holiday_cancel_subcommand(
                 failed = result.get('failed', [])
                 total_days = result.get('total_working_days_returned', 0)
                 
-                lines = [f":white_check_mark: *Holidays Cancelled*"]
+                lines = [":white_check_mark: *Holidays Cancelled*"]
                 lines.append(f"• Cancelled: {len(cancelled)} request(s)")
                 
                 if cancelled:
@@ -1519,8 +1516,8 @@ async def _handle_holiday_cancel_subcommand(
     except IntranetNotFoundError as e:
         logger.error(f"User {slack_user_id} attempted to cancel non-existent holiday: {e}")
         await respond(
-            f":x: *Holiday not found*\n"
-            f"Could not find one or more holiday requests.\n"
+            ":x: *Holiday not found*\n"
+            "Could not find one or more holiday requests.\n"
             "Use `/ggp holiday list` to see your current holiday requests."
         )
     except IntranetScopeError as e:
@@ -1707,7 +1704,7 @@ async def _handle_directory_list_subcommand(
             if len(users) > 30:
                 lines.append(f"\n_... and {len(users) - 30} more users. Use `/ggp directory search` to find specific users._")
             
-            lines.append(f"\n_Tip: Use `/ggp whois @user` to see detailed profile and status._")
+            lines.append("\n_Tip: Use `/ggp whois @user` to see detailed profile and status._")
             
             await respond("\n".join(lines))
             
@@ -2256,6 +2253,7 @@ async def _check_is_admin_silent(slack_user_id: str) -> bool:
 # ============================================================================
 
 import re as _re
+
 
 def _parse_ids_and_text(args: str) -> tuple[str, str | None]:
     """Split 'ids [optional text]' where ids may contain digits, commas, hyphens, spaces.

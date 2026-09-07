@@ -7,11 +7,11 @@ import signal
 # Configure logging FIRST, before any imports that might instantiate
 # token_storage or other components that log during initialization
 from ggp_bot.logging_config import setup_logging
+
 setup_logging()
 
-from ggp_bot.slack.app import start_app, shutdown_app
 from ggp_bot.intranet.client import IntranetClient
-
+from ggp_bot.slack.app import shutdown_app, start_app
 
 logger = logging.getLogger(__name__)
 

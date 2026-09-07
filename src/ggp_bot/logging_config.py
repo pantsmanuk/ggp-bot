@@ -6,7 +6,6 @@ Supports both console and file output with configurable log levels.
 import logging
 import sys
 from pathlib import Path
-from typing import TextIO
 
 from ggp_bot.config import settings
 

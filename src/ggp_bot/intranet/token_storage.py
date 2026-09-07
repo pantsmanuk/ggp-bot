@@ -15,15 +15,15 @@ Example:
     >>> print(key.decode())  # Add this to .env as TOKEN_ENCRYPTION_KEY
 """
 
+import base64
+import hashlib
 import json
 import logging
 import os
 import sqlite3
-import hashlib
-import base64
-from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
@@ -221,7 +221,7 @@ class TokenStorage:
             logger.debug(f"DB file does not exist: {self.db_path}")
             return None
         
-        logger.debug(f"DB file exists, querying...")
+        logger.debug("DB file exists, querying...")
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
@@ -251,7 +251,7 @@ class TokenStorage:
             # Decrypt token value
             try:
                 decrypted_token = self._decrypt(row["encrypted_token"])
-                logger.debug(f"Decryption successful")
+                logger.debug("Decryption successful")
             except Exception as e:
                 # Log detailed metadata on decryption failure for audit purposes
                 logger.error(
@@ -335,12 +335,12 @@ class TokenStorage:
         logger.debug(f"TokenStorage.save_token called for {slack_user_id}")
         
         created_at = datetime.now().isoformat()
-        logger.debug(f"Encrypting token...")
+        logger.debug("Encrypting token...")
         encrypted_token = self._encrypt(token)
         logger.debug(f"Token encrypted, length: {len(encrypted_token)}")
         scopes_json = json.dumps(scopes)
         
-        logger.debug(f"Writing to database...")
+        logger.debug("Writing to database...")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """

@@ -9,7 +9,6 @@ from typing import Any
 
 from ggp_bot.intranet.models import TimeClockEvent, TimeClockStatus
 
-
 # Clock emojis for each hour (on the hour and half-hour)
 # Format: (hour, is_half_hour) -> emoji
 # Hours are 12-hour format (1-12)
@@ -321,11 +320,11 @@ def format_attendance_message(
 
     text = f"{clock_emoji} {user_name}"
     if event_type == "in":
-        text += f" clocked *in*"
+        text += " clocked *in*"
     elif event_type == "out":
-        text += f" clocked *out*"
+        text += " clocked *out*"
     elif event_type == "lunch":
-        text += f" started *lunch*"
+        text += " started *lunch*"
     else:
         # Fallback for unknown event types
         text += f" {event_type}"
