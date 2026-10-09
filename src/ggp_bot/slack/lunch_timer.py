@@ -7,6 +7,7 @@ including DM warnings at 55, 59, and 60 minutes.
 import asyncio
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -80,7 +81,7 @@ class LunchTimerManager:
     def _init_database(self) -> None:
         """Initialize the SQLite database with required table."""
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS lunch_timers (
@@ -120,7 +121,7 @@ class LunchTimerManager:
             return False
         
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 
                 # Check if already in DB
@@ -176,7 +177,7 @@ class LunchTimerManager:
         
         # Remove from DB
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "DELETE FROM lunch_timers WHERE slack_user_id = ?",
@@ -200,7 +201,7 @@ class LunchTimerManager:
         
         # Check DB
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT 1 FROM lunch_timers WHERE slack_user_id = ?",
@@ -213,7 +214,7 @@ class LunchTimerManager:
     def _load_timer_from_db(self, slack_user_id: str) -> Optional[LunchTimer]:
         """Load a timer from the database into memory."""
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -245,7 +246,7 @@ class LunchTimerManager:
     def _update_warning_flag(self, slack_user_id: str, flag_name: str) -> None:
         """Update a warning flag in the database."""
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     f"UPDATE lunch_timers SET {flag_name} = 1 WHERE slack_user_id = ?",
@@ -278,7 +279,7 @@ class LunchTimerManager:
         
         # Ensure all DB timers are loaded into memory
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT slack_user_id FROM lunch_timers")
                 rows = cursor.fetchall()
