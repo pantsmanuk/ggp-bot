@@ -384,4 +384,4 @@ If you encounter issues or have questions, please contact your system administra
 
 ---
 
-*GGP Bot v1.0.0 - Making your work life easier, one command at a time.*
+*GGP Bot v1.0.4 - Making your work life easier, one command at a time.*
