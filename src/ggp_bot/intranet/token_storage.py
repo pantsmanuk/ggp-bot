@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -178,7 +179,7 @@ class TokenStorage:
     
     def _init_database(self) -> None:
         """Create SQLite schema if not exists."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_tokens (
                     slack_user_id TEXT PRIMARY KEY,
@@ -222,7 +223,7 @@ class TokenStorage:
             return None
         
         logger.debug("DB file exists, querying...")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 "SELECT * FROM user_tokens WHERE slack_user_id = ?",
@@ -341,7 +342,7 @@ class TokenStorage:
         scopes_json = json.dumps(scopes)
         
         logger.debug("Writing to database...")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute(
                 """
                 INSERT INTO user_tokens (slack_user_id, encrypted_token, scopes, created_at, expires_at)
@@ -377,7 +378,7 @@ class TokenStorage:
         """
         logger.info(f"TOKEN AUDIT: Removing token for user {slack_user_id}. Reason: {reason}")
         
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "DELETE FROM user_tokens WHERE slack_user_id = ?",
                 (slack_user_id,)
@@ -410,7 +411,7 @@ class TokenStorage:
         Returns:
             List of Slack user IDs
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "SELECT slack_user_id FROM user_tokens"
             )
@@ -422,7 +423,7 @@ class TokenStorage:
         Returns:
             Number of tokens removed
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute("DELETE FROM user_tokens")
             conn.commit()
             return cursor.rowcount
@@ -433,7 +434,7 @@ class TokenStorage:
         Returns:
             Dict with count of stored tokens
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute("SELECT COUNT(*) FROM user_tokens")
             count = cursor.fetchone()[0]
             
@@ -450,7 +451,7 @@ class TokenStorage:
         compromising security by logging actual token values.
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn, conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT slack_user_id, scopes, created_at, expires_at FROM user_tokens"
@@ -530,7 +531,7 @@ class TokenStorage:
         }
         
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn, conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT slack_user_id, encrypted_token, scopes, created_at, expires_at FROM user_tokens"

@@ -7,6 +7,7 @@ not on every clock command (which may be idempotent).
 
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -47,7 +48,7 @@ class TimeClockStateTracker:
     def _init_db(self) -> None:
         """Initialize the SQLite database with required table."""
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS timeclock_notifications (
@@ -73,7 +74,7 @@ class TimeClockStateTracker:
             The last state ("in" or "out") or None if no record exists
         """
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT last_state FROM timeclock_notifications WHERE slack_user_id = ?",
@@ -123,7 +124,7 @@ class TimeClockStateTracker:
             event_id: The time clock event ID for reference
         """
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -149,7 +150,7 @@ class TimeClockStateTracker:
             slack_user_id: The Slack user ID
         """
         try:
-            with sqlite3.connect(str(self.db_path)) as conn:
+            with closing(sqlite3.connect(str(self.db_path))) as conn, conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "DELETE FROM timeclock_notifications WHERE slack_user_id = ?",

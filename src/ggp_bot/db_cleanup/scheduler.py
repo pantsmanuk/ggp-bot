@@ -11,6 +11,7 @@ Follows the LunchTimerManager pattern with background asyncio tasks.
 import asyncio
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -129,7 +130,7 @@ class DatabaseCleanupScheduler:
             # Get the database path from the lunch timer manager
             db_path = lunch_timer_manager.db_path
             
-            with sqlite3.connect(str(db_path)) as conn:
+            with closing(sqlite3.connect(str(db_path))) as conn, conn:
                 cursor = conn.cursor()
                 
                 # Count before deletion for logging
@@ -163,7 +164,7 @@ class DatabaseCleanupScheduler:
             # Get the database path from the state tracker
             db_path = timeclock_tracker.db_path
             
-            with sqlite3.connect(str(db_path)) as conn:
+            with closing(sqlite3.connect(str(db_path))) as conn, conn:
                 cursor = conn.cursor()
                 
                 # Count before deletion for logging
@@ -242,7 +243,7 @@ class DatabaseCleanupScheduler:
             import json
             
             # Check each token without triggering get_token's expiry removal
-            with sqlite3.connect(str(token_storage.db_path)) as conn:
+            with closing(sqlite3.connect(str(token_storage.db_path))) as conn, conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT slack_user_id, scopes, created_at, expires_at FROM user_tokens"
@@ -285,7 +286,7 @@ class DatabaseCleanupScheduler:
                 
                 # Check decryptability (this validates encryption integrity)
                 try:
-                    with sqlite3.connect(str(token_storage.db_path)) as conn:
+                    with closing(sqlite3.connect(str(token_storage.db_path))) as conn, conn:
                         cursor = conn.execute(
                             "SELECT encrypted_token FROM user_tokens WHERE slack_user_id = ?",
                             (slack_id,)
