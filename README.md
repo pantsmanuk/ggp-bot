@@ -81,17 +81,33 @@ Clock in/out events are automatically posted to the #Attendance channel (configu
 
 ## Development
 
-```bash
-# Setup
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and run these commands from the repository root. The project requires Python 3.11 or later.
 
-# Run
+```bash
+# Install the project and development tools from uv.lock
+uv sync --locked
+
+# Configure local credentials
 cp .env.example .env
-# ... edit .env with your tokens ...
-ggp-bot
 ```
+
+`uv sync` creates `.venv` and installs the project in editable mode, including the `dev` dependency group. `uv run` uses that environment automatically.
+
+Edit `.env` with your Slack and intranet settings, then start the bot:
+
+```bash
+uv run ggp-bot
+```
+
+Run the development checks:
+
+```bash
+uv run ruff check .
+uv run mypy
+uv run --with pytest --with pytest-asyncio pytest --ignore=tests/test_health.py
+```
+
+The test command supplies pytest dependencies for that run. It excludes `tests/test_health.py`, which calls the live intranet API.
 
 See [DEPLOY.md](docs/architecture/DEPLOY.md) for production deployment instructions (systemd service on Ubuntu 24.04).
 
