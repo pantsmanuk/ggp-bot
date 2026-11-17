@@ -18,6 +18,7 @@ from ggp_bot.intranet.models import (
     AdminHoliday,
     AdminHolidayList,
     AdminHolidaySummary,
+    CalendarHoliday,
     HealthStatus,
     HolidayEntitlement,
     HolidayRequest,
@@ -273,11 +274,11 @@ class IntranetClient:
         data = await self._get("/api/holidays/next-public", authenticated=False)
         return PublicHoliday(**data["data"])
     
-    async def get_all_public_holidays(self) -> list[PublicHoliday]:
+    async def get_all_public_holidays(self) -> list[CalendarHoliday]:
         """Get all UK public holidays."""
         data = await self._get("/api/holidays/public", authenticated=False)
         holidays_data = data.get("data", [])
-        return [PublicHoliday(**h) for h in holidays_data]
+        return [CalendarHoliday(**h) for h in holidays_data]
     
     # ==================== Authentication ====================
     

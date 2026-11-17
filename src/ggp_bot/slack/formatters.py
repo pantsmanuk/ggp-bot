@@ -4,10 +4,10 @@ This module provides Block Kit builders for formatting time cards,
 status displays, and other rich Slack messages.
 """
 
-from datetime import datetime
 from typing import Any
 
 from ggp_bot.intranet.models import TimeClockEvent, TimeClockStatus
+from ggp_bot.utils.local_time import london_datetime
 
 # Clock emojis for each hour (on the hour and half-hour)
 # Format: (hour, is_half_hour) -> emoji
@@ -52,7 +52,7 @@ def _get_clock_emoji_for_time(timestamp: str) -> str:
         Clock emoji corresponding to the rounded time
     """
     try:
-        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        dt = london_datetime(timestamp)
     except (ValueError, AttributeError):
         return "🕐"  # Default fallback
 
@@ -115,15 +115,13 @@ def format_timecard_block(title: str, events: list[TimeClockEvent]) -> list[dict
     
     # Group events by day for week view
     from collections import defaultdict
-    from datetime import datetime
     
     days = defaultdict(list)
     for event in events:
-        # Parse date from ISO datetime
+        # Group by the London calendar day, including events near UTC midnight.
         try:
-            dt = datetime.fromisoformat(event.time.replace('Z', '+00:00'))
-            day_key = dt.strftime("%A %d/%m")  # "Monday 22/04"
-        except:
+            day_key = event.local_datetime.strftime("%A %d/%m")  # "Monday 22/04"
+        except ValueError:
             day_key = "Unknown"
         days[day_key].append(event)
     
@@ -135,7 +133,7 @@ def format_timecard_block(title: str, events: list[TimeClockEvent]) -> list[dict
         paired_events = []
         current_in = None
         
-        for event in sorted(day_events, key=lambda e: e.time):
+        for event in sorted(day_events, key=lambda e: e.event):
             if event.type == "in":
                 current_in = event
             elif event.type == "out" and current_in:

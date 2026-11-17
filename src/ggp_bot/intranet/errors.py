@@ -219,6 +219,16 @@ def raise_for_api_error(response_data: dict, status_code: int) -> None:
     error_code = error_info.get("code", "UNKNOWN")
     message = error_info.get("message", "Unknown error")
     details = error_info.get("details")
+
+    if error_code == "VALIDATION_ERROR" and isinstance(details, dict):
+        field_errors = [
+            item
+            for errors in details.values()
+            for item in (errors if isinstance(errors, list) else [errors])
+            if isinstance(item, str)
+        ]
+        if field_errors:
+            message = f"{message}: {'; '.join(field_errors)}"
     
     # Get exception class from mapping, fallback to generic errors
     exception_class = ERROR_CODE_MAP.get(error_code)

@@ -17,7 +17,6 @@ from ggp_bot.intranet.models import (
     AdminHoliday,
     AdminHolidayList,
     AdminHolidaySummary,
-    AdminHolidayUser,
     UserProfile,
 )
 from ggp_bot.slack.handlers.commands import (
@@ -88,10 +87,11 @@ def sample_pending_holiday():
     return AdminHoliday(
         id=123,
         user_id=2,
-        user=AdminHolidayUser(id=2, name="John Doe", email="john@ggpsystems.co.uk", department="Engineering"),
+        user_name="John Doe",
+        user_department="Engineering",
         type="holiday",
-        start="2026-07-01T00:00:00Z",
-        end="2026-07-01T00:00:00Z",
+        start_date="2026-07-01",
+        end_date="2026-07-01",
         working_days=1.0,
         note="Vacation",
         approved=False,

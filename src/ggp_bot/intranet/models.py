@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from ggp_bot.utils.local_time import london_date, london_datetime
 
 
 class ApiResponse(BaseModel):
@@ -21,14 +23,16 @@ class HealthStatus(BaseModel):
     timestamp: datetime | None = None
 
 
-class PublicHoliday(BaseModel):
+class CalendarHoliday(BaseModel):
     """UK public holiday (bank holiday)."""
     date: str = Field(description="Date in YYYY-MM-DD format")
     day_of_week: str
     note: str
-    days_until: int
-    is_today: bool
-    is_tomorrow: bool
+
+    @field_validator("date")
+    @classmethod
+    def calendar_date(cls, value: str) -> str:
+        return london_date(value)
     
     @property
     def name(self) -> str:
@@ -39,6 +43,13 @@ class PublicHoliday(BaseModel):
     def description(self) -> str:
         """Alias for note for convenience."""
         return self.note
+
+
+class PublicHoliday(CalendarHoliday):
+    """Next public holiday, including proximity information."""
+    days_until: int
+    is_today: bool
+    is_tomorrow: bool
 
 
 class HolidayEntitlement(BaseModel):
@@ -93,13 +104,13 @@ class HolidayRequest(BaseModel):
     
     @property
     def start_date(self) -> str:
-        """Extract date portion from start datetime."""
-        return self.start[:10] if self.start else ""
+        """Display the start's London calendar date."""
+        return london_date(self.start) if self.start else ""
     
     @property
     def end_date(self) -> str:
-        """Extract date portion from end datetime."""
-        return self.end[:10] if self.end else ""
+        """Display the end's London calendar date."""
+        return london_date(self.end) if self.end else ""
     
     @property
     def half_day_summary(self) -> str:
@@ -165,23 +176,24 @@ class TimeClockEvent(BaseModel):
     """Time clock event - from /api/timeclocks endpoints."""
     id: int
     type: str = Field(description="'in' or 'out'")
-    # API returns 'event', model uses 'time' for clarity
-    time: str = Field(
-        alias="event",
-        validation_alias="event",
-        description="ISO 8601 datetime string"
-    )
+    event: str = Field(description="UTC ISO 8601 timestamp")
+    time: str | None = Field(default=None, description="Local time in HH:MM format")
+    date: str | None = Field(default=None, description="Local date in YYYY-MM-DD format")
     note: str | None = None
     duration: float | None = Field(default=None, description="Duration in minutes for 'out' events")
     
     @property
+    def local_datetime(self) -> datetime:
+        """Use the event instant as the source of truth for London displays."""
+        return london_datetime(self.event)
+
+    @property
     def event_time_12h(self) -> str:
-        """Convert ISO datetime to 12-hour format (e.g., '2:30 PM')."""
+        """Display the event in London time."""
         try:
-            dt = datetime.fromisoformat(self.time.replace('Z', '+00:00'))
-            return dt.strftime("%I:%M %p").lstrip("0")  # Remove leading zero
-        except:
-            return self.time
+            return self.local_datetime.strftime("%I:%M %p").lstrip("0")
+        except ValueError:
+            return "Unknown"
     
     @property
     def duration_formatted(self) -> str:
@@ -232,22 +244,15 @@ class TimeClockStatus(BaseModel):
 # Admin Holiday Models
 # ============================================================================
 
-class AdminHolidayUser(BaseModel):
-    """User info embedded in admin holiday listings."""
-    id: int
-    name: str
-    email: str
-    department: str | None = None
-
-
 class AdminHoliday(BaseModel):
     """Pending holiday request with user details — from /api/admin/holidays/pending."""
     id: int
     user_id: int
-    user: AdminHolidayUser
+    user_name: str
+    user_department: str | None = None
     type: str = Field(default="holiday")
-    start: str
-    end: str
+    start_date: str
+    end_date: str
     start_half_day: str | None = None
     end_half_day: str | None = None
     half_day: str | None = None
@@ -259,14 +264,6 @@ class AdminHoliday(BaseModel):
     @property
     def status(self) -> str:
         return "approved" if self.approved else "pending"
-
-    @property
-    def start_date(self) -> str:
-        return self.start[:10] if self.start else ""
-
-    @property
-    def end_date(self) -> str:
-        return self.end[:10] if self.end else ""
 
 
 class AdminHolidaySummary(BaseModel):
