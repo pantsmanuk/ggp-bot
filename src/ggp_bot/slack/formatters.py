@@ -4,6 +4,7 @@ This module provides Block Kit builders for formatting time cards,
 status displays, and other rich Slack messages.
 """
 
+from datetime import date
 from typing import Any
 
 from ggp_bot.intranet.models import TimeClockEvent, TimeClockStatus
@@ -113,42 +114,45 @@ def format_timecard_block(title: str, events: list[TimeClockEvent]) -> list[dict
         })
         return blocks
     
-    # Group events by day for week view
+    # Pair across the whole history before assigning sessions to London days.
     from collections import defaultdict
-    
-    days = defaultdict(list)
-    for event in events:
-        # Group by the London calendar day, including events near UTC midnight.
+
+    def event_instant(event: TimeClockEvent) -> float:
         try:
-            day_key = event.local_datetime.strftime("%A %d/%m")  # "Monday 22/04"
+            # Compare instants, including fractional seconds and the autumn fold.
+            return event.local_datetime.timestamp()
         except ValueError:
-            day_key = "Unknown"
-        days[day_key].append(event)
-    
-    # Build display for each day
-    for day_name, day_events in sorted(days.items()):
+            return float("inf")
+
+    paired_events: list[tuple[TimeClockEvent | None, TimeClockEvent | None]] = []
+    current_in = None
+    for event in sorted(events, key=event_instant):
+        if event.type == "in":
+            current_in = event
+        elif event.type == "out" and current_in:
+            paired_events.append((current_in, event))
+            current_in = None
+        elif event.type == "out":
+            paired_events.append((None, event))
+    if current_in:
+        paired_events.append((current_in, None))
+
+    days = defaultdict(list)
+    for clock_in, clock_out in paired_events:
+        anchor = clock_in if clock_in is not None else clock_out
+        assert anchor is not None
+        try:
+            day_key = anchor.local_datetime.date()
+        except ValueError:
+            day_key = None
+        days[day_key].append((clock_in, clock_out))
+
+    for day_key, day_pairs in sorted(days.items(), key=lambda item: item[0] or date.max):
+        day_name = day_key.strftime("%A %d/%m") if day_key is not None else "Unknown"
         day_lines = []
-        
-        # Pair up in/out events
-        paired_events = []
-        current_in = None
-        
-        for event in sorted(day_events, key=lambda e: e.event):
-            if event.type == "in":
-                current_in = event
-            elif event.type == "out" and current_in:
-                paired_events.append((current_in, event))
-                current_in = None
-            elif event.type == "out":
-                # Out without matching in
-                paired_events.append((None, event))
-        
-        # Handle unclosed in event
-        if current_in:
-            paired_events.append((current_in, None))
-        
+
         # Format each pair
-        for clock_in, clock_out in paired_events:
+        for clock_in, clock_out in day_pairs:
             if clock_in and clock_out:
                 in_time = clock_in.event_time_12h
                 out_time = clock_out.event_time_12h

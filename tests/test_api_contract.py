@@ -55,6 +55,35 @@ def test_clock_response_without_local_fields_still_parses():
     assert "Wednesday 22/04" in str(format_timecard_block("Today", [event]))
 
 
+@pytest.mark.parametrize(("start", "end", "day", "times"), [
+    ("2026-07-01T22:30:00Z", "2026-07-01T23:30:00Z", "Wednesday 01/07", "11:30 PM → 12:30 AM"),
+    ("2026-07-01T23:30:00Z", "2026-07-02T00:30:00Z", "Thursday 02/07", "12:30 AM → 1:30 AM"),
+])
+def test_clock_sessions_crossing_midnight_belong_to_start_day(start, end, day, times):
+    events = [
+        TimeClockEvent(id=2, type="out", event=end),
+        TimeClockEvent(id=1, type="in", event=start),
+    ]
+    blocks = format_timecard_block("Week", events)
+    assert len(blocks) == 2
+    text = blocks[1]["text"]["text"]
+    assert day in text
+    assert times in text
+    assert "Currently clocked in" not in text
+    assert "missing clock in" not in text
+
+
+def test_clock_order_accepts_mixed_timestamp_precision():
+    events = [
+        TimeClockEvent(id=2, type="out", event="2026-07-01T09:00:00.5Z"),
+        TimeClockEvent(id=1, type="in", event="2026-07-01T09:00:00Z"),
+    ]
+    card = str(format_timecard_block("Today", events))
+    assert "10:00 AM → 10:00 AM" in card
+    assert "Currently clocked in" not in card
+    assert "missing clock in" not in card
+
+
 @pytest.mark.asyncio
 async def test_admin_pending_accepts_documented_flat_response():
     data = {
