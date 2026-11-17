@@ -11,6 +11,7 @@ user-specific endpoints (holiday requests, profile) use the user's personal toke
 import logging
 import re
 import socket
+from datetime import datetime
 
 from slack_bolt.async_app import AsyncAck, AsyncRespond
 from slack_sdk.errors import SlackApiError
@@ -30,6 +31,7 @@ from ggp_bot.intranet.errors import (
 )
 from ggp_bot.intranet.token_storage import token_storage
 from ggp_bot.utils.date_parser import parse_holiday_request
+from ggp_bot.utils.local_time import LONDON, format_london_timestamp, london_date
 
 # ============================================================================
 # Levenshtein Distance Helper for "Did You Mean?" Suggestions
@@ -774,7 +776,7 @@ async def _handle_status_subcommand(
                 f"• Status: {health.status}\n"
                 f"• API Version: {health.version}\n"
                 f"• Bot Version: v{IntranetClient.BOT_VERSION}\n"
-                f"• Last checked: {health.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') if health.timestamp else 'N/A'}"
+                f"• Last checked: {format_london_timestamp(health.timestamp) if health.timestamp else 'N/A'}"
             )
         except IntranetError as e:
             logger.error(f"Intranet connection failed in status command: {e}")
@@ -1073,6 +1075,11 @@ async def _handle_whois_subcommand(
                 
                 status_parts = []
                 if current_absence:
+                    if isinstance(current_absence, dict):
+                        current_absence = {
+                            key: london_date(value) if key in {"start", "end"} and value else value
+                            for key, value in current_absence.items()
+                        }
                     status_parts.append(f"📅 {current_absence}")
                 elif is_working:
                     status_parts.append("💼 Working")
@@ -1186,7 +1193,7 @@ async def _handle_holiday_list_subcommand(
                 
                 # Determine holiday timing relative to today
                 end_date = date.fromisoformat(h.end_date) if isinstance(h.end_date, str) else h.end_date
-                today = date.today()
+                today = datetime.now(LONDON).date()
                 is_future_or_current = end_date >= today  # Future or currently being taken
                 
                 # Select emoji: pending -> hourglass, approved+future/current -> palm_tree, approved+past -> checkmark
@@ -2391,9 +2398,16 @@ async def _handle_admin_gc_status_subcommand(
         status = cleanup_scheduler.get_status()
         
         running = "Yes" if status.get('running') else "No"
-        last_run = status.get('last_run', 'Never')
+        # Scheduler timestamps without offsets use the host's local timezone.
+        last_run = (
+            format_london_timestamp(datetime.fromisoformat(status['last_run']).astimezone())
+            if status.get('last_run') else 'Never'
+        )
         last_status = status.get('last_status', 'N/A')
-        next_run = status.get('next_run', 'Unknown')
+        next_run = (
+            format_london_timestamp(datetime.fromisoformat(status['next_run']).astimezone())
+            if status.get('next_run') else 'Unknown'
+        )
         next_in = status.get('next_run_in_seconds', 0)
         
         lines = ["*Garbage Collection Status* :broom:"]
@@ -2600,7 +2614,7 @@ async def _handle_admin_holiday_pending_subcommand(
             for h in result.holidays:
                 date_display = _format_holiday_dates(h)
                 lines.append(
-                    f"• #{h.id}: {h.user.name} — {date_display}"
+                    f"• #{h.id}: {h.user_name} — {date_display}"
                     f" ({h.working_days} day(s))"
                 )
                 if h.note:
